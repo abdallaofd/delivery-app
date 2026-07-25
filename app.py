@@ -7,7 +7,7 @@ from supabase import create_client
 # 1. إعدادات الاتصال بقاعدة البيانات السحابية (Supabase)
 # ==========================================
 SUPABASE_URL = "https://xoiwmchqsluhgygkfsvm.supabase.co"
-SUPABASE_KEY = "sb_publishable_TVd6D2jmfePoUZq0QEn-jw_OI56OHWH"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhvaXdtY2hxc2x1aGd5Z2tmc3ZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3Mjc1MDcsImV4cCI6MjEwMDMwMzUwN30.0Mi_UYLL1EImmqsAM2ZRycNOYbcXjIg73TIHDJHOmuI"
 
 
 @st.cache_resource
@@ -539,10 +539,10 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 amt_val = float(raw_amt)
                                 r_name_val = str(r[name_c]).strip()
                                 r_code_val = str(r[code_c]).strip() if code_c and pd.notna(r[code_c]) else ""
-                                
+
                                 parsed_date = pd.to_datetime(r[date_c], errors="coerce") if date_c and pd.notna(r[date_c]) else pd.Timestamp.now()
                                 r_date_val = str(parsed_date.date()) if pd.notna(parsed_date) else str(pd.Timestamp.now().date())
-                                
+
                                 r_notes_val = (
                                     str(r[notes_c]).strip()
                                     if (notes_c and pd.notna(r[notes_c]))
@@ -564,7 +564,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 continue
 
                     if new_payments:
-                        # 1. تسجيل المناديب الجدد أولاً دفعة واحدة
+                        # 1. تسجيل المناديب الجدد أولاً
                         existing_riders = get_riders()
                         existing_names = {r.get("name") for r in existing_riders}
                         riders_to_insert = [
@@ -575,9 +575,9 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                         if riders_to_insert:
                             supabase.table("riders").insert(riders_to_insert).execute()
 
-                        # 2. رفع التوريدات جملة واحدة (Bulk Insert)
+                        # 2. رفع التوريدات دفعة واحدة (Bulk Insert)
                         supabase.table("payments").insert(new_payments).execute()
-                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة دفعة واحدة!")
+                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة!")
                     else:
                         st.warning("⚠️ لم يتم العثور على حركات توريد صالحة في الملف.")
 
