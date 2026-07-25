@@ -434,7 +434,6 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
         notes = st.text_input("ملاحظات / رقم الإيصال:")
 
-        # زر الحفظ مع حماية ضد الضغط المتكرر
         if st.button("💾 حفظ التوريد في السحابة", type="primary"):
             if selected_rider_name and amount > 0:
                 with st.spinner("جاري إرسال الحفظ للسحابة..."):
@@ -447,10 +446,8 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                         "notes": notes if notes else "تعديل/إدخال يدوي",
                     }).execute()
                 
-                # أشعار انبثاقي سريع بالسطر الإيجابي
                 st.toast(f"✅ تم الحفظ: {amount} ج.م - {selected_rider_name}", icon="🎉")
                 
-                # banner تنبيهي ملفت ليتأكد الموظف
                 st.success(
                     f"🎉 **تم تسجيل التوريد بنجاح!**\n\n"
                     f"👤 **المندوب:** {selected_rider_name}\n\n"
@@ -673,12 +670,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
                     st.success("✅ تم نقل التوريد إلى الأرشيف بنجاح!")
                     st.rerun()
                 except Exception as e:
-                    try:
-                        supabase.table("payments").delete().eq("id", pay_id).execute()
-                        st.success("✅ تم الحذف بنجاح!")
-                        st.rerun()
-                    except Exception as ex:
-                        st.error(f"خطأ في الحذف: {ex}")
+                    st.error(f"❌ تعذر نقل الحركة للأرشيف بسبب خطأ في جدول الأرشيف: {e}")
         else:
             st.info("لا توجد توريدات حالية للحذف.")
 
@@ -702,10 +694,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
                         })
 
                     if records_to_archive:
-                        try:
-                            supabase.table("deleted_payments").insert(records_to_archive).execute()
-                        except Exception:
-                            pass
+                        supabase.table("deleted_payments").insert(records_to_archive).execute()
 
                     supabase.table("payments").delete().neq("id", 0).execute()
                     st.success("✅ تم مسح ونقل كافة التوريدات للأرشيف بنجاح!")
@@ -739,7 +728,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
     st.divider()
 
     # ==========================================
-    # قسم أرشيف المحذوفات والاسترجاع
+    # قسم أرشيف المحذوفات واسترجاع البيانات
     # ==========================================
     st.subheader("🗑️ أرشيف المحذوفات مع ميزة الاسترجاع")
     deleted_list = get_deleted_payments()
