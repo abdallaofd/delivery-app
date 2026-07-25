@@ -127,72 +127,105 @@ st.markdown(
     }
     
     .stApp {
-        background-color: #f8fafc;
+        background-color: #f1f5f9;
     }
     
+    /* الهيدر العلوي */
     .main-header {
-        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
-        color: white;
-        padding: 25px 20px;
-        border-radius: 16px;
-        margin-bottom: 30px;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #ffffff;
+        padding: 30px 25px;
+        border-radius: 20px;
+        margin-bottom: 25px;
         text-align: center !important;
-        box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.25);
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+        border: 1px solid #334155;
     }
     
     .main-header h1 {
         margin: 0 !important;
-        font-size: 28px !important;
+        font-size: 30px !important;
         font-weight: 800 !important;
-        color: #ffffff !important;
+        color: #f8fafc !important;
         text-align: center !important;
     }
     
     .main-header p {
-        margin: 8px 0 0 0 !important;
+        margin: 10px 0 0 0 !important;
         font-size: 15px !important;
-        opacity: 0.92;
+        color: #94a3b8 !important;
         text-align: center !important;
     }
 
+    /* عناوين الأقسام */
     .section-title {
         text-align: center !important;
-        color: #1e293b;
-        font-weight: 700;
-        font-size: 20px;
-        margin-top: 15px;
-        margin-bottom: 20px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #e2e8f0;
+        color: #0f172a;
+        font-weight: 800;
+        font-size: 22px;
+        margin-top: 20px;
+        margin-bottom: 25px;
+        padding-bottom: 10px;
+        border-bottom: 3px solid #cbd5e1;
     }
     
+    /* بطاقات الأرقام والمؤشرات (Metrics) */
     div[data-testid="stMetric"] {
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-top: 4px solid #2563eb;
-        border-radius: 12px;
-        padding: 16px;
+        border-radius: 16px;
+        padding: 20px 15px;
         text-align: center !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
     }
     
-    div[data-testid="stMetric"] label, div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+    div[data-testid="stMetric"] label {
+        font-size: 15px !important;
+        font-weight: 700 !important;
+        color: #64748b !important;
+        justify-content: center !important;
+    }
+
+    div[data-testid="stMetricValue"] {
+        font-size: 24px !important;
+        font-weight: 800 !important;
+        color: #0f172a !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
         justify-content: center !important;
     }
     
+    /* الأزرار */
     .stButton > button {
-        border-radius: 10px;
+        border-radius: 12px;
         font-weight: 700;
         font-size: 15px;
-        padding: 10px 24px;
+        padding: 12px 24px;
         width: 100%;
+        transition: all 0.2s ease;
     }
-    
+
+    /* الشريط الجانبي */
     section[data-testid="stSidebar"] {
         background-color: #0f172a;
     }
     section[data-testid="stSidebar"] * {
-        color: #f1f5f9 !important;
+        color: #f8fafc !important;
+    }
+
+    /* الجداول */
+    div[data-testid="stDataFrame"] {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+        border: 1px solid #e2e8f0;
     }
     </style>
 """,
@@ -203,7 +236,7 @@ st.markdown(
 # 3. القائمة الجانبية
 # ==========================================
 st.sidebar.markdown(
-    "<h2 style='text-align: center; margin-bottom: 20px;'>⚡ لوحة التحكم</h2>",
+    "<h2 style='text-align: center; margin-bottom: 20px; font-weight: 800;'>⚡ لوحة التحكم</h2>",
     unsafe_allow_html=True,
 )
 st.sidebar.markdown("---")
