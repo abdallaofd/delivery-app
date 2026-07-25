@@ -18,7 +18,7 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# دوال قراءة وحفظ البيانات من السحابة مباشرة
+# دوال قراءة وحفظ البيانات من مباشرة
 def get_riders():
     try:
         res = supabase.table("riders").select("*").execute()
@@ -258,7 +258,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
     st.markdown(
         """
     <div class="main-header">
-        <h1>📊 مطابقة عهدة الداشبورد مع التوريدات السحابية</h1>
+        <h1>📊 مطابقة عهدة الداشبورد مع التوريدات </h1>
         <p>متابعة مديونيات المناديب والصافي المستحق بلحظة بلحظة</p>
     </div>
     """,
@@ -311,7 +311,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             )
 
             save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
-            st.success("✅ تم استبدال وحفظ الداشبورد السحابي بنجاح!")
+            st.success("✅ تم استبدال وحفظ الداشبورد بنجاح!")
         except Exception as e:
             st.error(f"خطأ في قراءة الملف: {e}")
     else:
@@ -433,8 +433,8 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
     st.markdown(
         """
     <div class="main-header">
-        <h1>➕ تسجيل توريد جديد للمندوب (سحابي)</h1>
-        <p>حفظ فوري في قاعدة البيانات السحابية لضمان عدم ضياع أي بيانات</p>
+        <h1>➕ تسجيل توريد جديد للمندوب </h1>
+        <p>حفظ فوري في قاعدة البيانات لضمان عدم ضياع أي بيانات</p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -467,9 +467,9 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
         notes = st.text_input("ملاحظات / رقم الإيصال:")
 
-        if st.button("💾 حفظ التوريد في السحابة", type="primary"):
+        if st.button("💾 حفظ التوريد ", type="primary"):
             if selected_rider_name and amount > 0:
-                with st.spinner("جاري إرسال الحفظ للسحابة..."):
+                with st.spinner("جاري إرسال الحفظ ..."):
                     auto_register_rider(selected_rider_code, selected_rider_name)
                     supabase.table("payments").insert({
                         "rider_code": str(selected_rider_code),
@@ -502,7 +502,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         )
 
         if batch_file:
-            if st.button("📥 رفع وسحب البيانات للسحابة", type="primary"):
+            if st.button("📥 رفع وسحب البيانات", type="primary"):
                 try:
                     df_b = (
                         pd.read_csv(batch_file)
@@ -613,7 +613,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 
                         supabase.table("payments").insert(new_payments).execute()
                         st.toast(f"✅ تم رفع {len(new_payments)} حركة!", icon="🚀")
-                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة!")
+                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح !")
                     else:
                         st.warning("⚠️ لم يتم العثور على حركات توريد صالحة في الملف.")
 
@@ -627,7 +627,7 @@ elif menu == "👥 إدارة أسماء المناديب":
     st.markdown(
         """
     <div class="main-header">
-        <h1>👥 إدارة بيانات المناديب (سحابياً)</h1>
+        <h1>👥 إدارة بيانات المناديب </h1>
         <p>عرض وإضافة المناديب في قاعدة البيانات الدائمة</p>
     </div>
     """,
@@ -636,7 +636,7 @@ elif menu == "👥 إدارة أسماء المناديب":
 
     r_code = st.text_input("كود المندوب (ID):")
     r_name = st.text_input("اسم المندوب بالكامل:")
-    if st.button("إضافة المندوب للسحابة", type="primary"):
+    if st.button("إضافة المندوب ", type="primary"):
         if r_name:
             auto_register_rider(r_code, r_name)
             st.toast("✅ تم تسجيل المندوب بنجاح!", icon="👤")
@@ -662,7 +662,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
         """
     <div class="main-header">
         <h1>📜 سجل التوريدات وإدارتها</h1>
-        <p>حذف وإدارة التوريدات مع حماية البيانات عبر الأرشيف السحابي</p>
+        <p>حذف وإدارة التوريدات مع حماية البيانات عبر الأرشيف </p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -756,7 +756,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
         )
         st.dataframe(df_p_show, use_container_width=True, hide_index=True)
     else:
-        st.info("لا توجد توريدات مسجلة بالسحابة حتى الآن.")
+        st.info("لا توجد توريدات مسجلة حتى الآن.")
 
     st.divider()
 
