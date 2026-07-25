@@ -529,18 +529,20 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                         None,
                     )
 
-                    count = 0
+                    new_payments = []
+                    new_riders = {}
+
                     for _, r in df_b.iterrows():
                         if pd.notna(r[name_c]) and pd.notna(r[amount_c]):
                             try:
-                                amt_val = float(str(r[amount_c]).replace(",", "").strip())
+                                raw_amt = str(r[amount_c]).replace(",", "").strip()
+                                amt_val = float(raw_amt)
                                 r_name_val = str(r[name_c]).strip()
-                                r_code_val = str(r[code_c]).strip() if code_c else ""
-                                r_date_val = (
-                                    str(pd.to_datetime(r[date_c], errors="coerce").date())
-                                    if date_c and pd.notna(r[date_c])
-                                    else str(pd.Timestamp.now().date())
-                                )
+                                r_code_val = str(r[code_c]).strip() if code_c and pd.notna(r[code_c]) else ""
+                                
+                                parsed_date = pd.to_datetime(r[date_c], errors="coerce") if date_c and pd.notna(r[date_c]) else pd.Timestamp.now()
+                                r_date_val = str(parsed_date.date()) if pd.notna(parsed_date) else str(pd.Timestamp.now().date())
+                                
                                 r_notes_val = (
                                     str(r[notes_c]).strip()
                                     if (notes_c and pd.notna(r[notes_c]))
@@ -548,20 +550,39 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 )
 
                                 if amt_val > 0 and r_name_val:
-                                    auto_register_rider(r_code_val, r_name_val)
-                                    supabase.table("payments").insert({
+                                    if r_name_val not in new_riders:
+                                        new_riders[r_name_val] = r_code_val
+
+                                    new_payments.append({
                                         "rider_code": r_code_val,
                                         "rider_name": r_name_val,
                                         "date": r_date_val,
                                         "amount": amt_val,
                                         "notes": r_notes_val,
-                                    }).execute()
-                                    count += 1
+                                    })
                             except Exception:
                                 continue
-                    st.success(f"✅ تم رفع {count} حركة توريد بنجاح للسحابة!")
+
+                    if new_payments:
+                        # 1. تسجيل المناديب الجدد أولاً دفعة واحدة
+                        existing_riders = get_riders()
+                        existing_names = {r.get("name") for r in existing_riders}
+                        riders_to_insert = [
+                            {"code": code, "name": name}
+                            for name, code in new_riders.items()
+                            if name not in existing_names
+                        ]
+                        if riders_to_insert:
+                            supabase.table("riders").insert(riders_to_insert).execute()
+
+                        # 2. رفع التوريدات جملة واحدة (Bulk Insert)
+                        supabase.table("payments").insert(new_payments).execute()
+                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة دفعة واحدة!")
+                    else:
+                        st.warning("⚠️ لم يتم العثور على حركات توريد صالحة في الملف.")
+
                 except Exception as e:
-                    st.error(f"خطأ: {e}")
+                    st.error(f"خطأ أثناء معالجة الملف: {e}")
 
 # ==========================================
 # الشاشة الثالثة: إدارة أسماء المناديب
