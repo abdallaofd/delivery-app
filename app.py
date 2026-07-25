@@ -394,7 +394,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             st.error(f"خطأ في معالجة البيانات: {e}")
 
 # ==========================================
-# الشاشة الثانية: تسجيل توريد يومي (مع حماية الزر وتنبيه الحفظ)
+# الشاشة الثانية: تسجيل توريد يومي
 # ==========================================
 elif menu == "➕ إضافة / تسجيل توريد يومي":
     st.markdown(
@@ -728,26 +728,25 @@ elif menu == "📜 سجل التوريدات الشهرية":
     st.divider()
 
     # ==========================================
-    # قسم أرشيف المحذوفات واسترجاع البيانات
+    # قسم أرشيف المحذوفات (مع الاسترجاع والحذف النهائي)
     # ==========================================
-    st.subheader("🗑️ أرشيف المحذوفات مع ميزة الاسترجاع")
+    st.subheader("🗑️ أرشيف المحذوفات (الاسترجاع أو الحذف النهائي)")
     deleted_list = get_deleted_payments()
 
     if deleted_list:
         del_options = {
-            f"اسم المندوب: {d.get('rider_name')} | المبلغ: {d.get('amount')} ج.م | تاريخ الحذف: {d.get('deleted_at', '')}": d
+            f"ID الأرشيف: {d.get('id')} | المندوب: {d.get('rider_name')} | المبلغ: {d.get('amount')} ج.م | الحذف: {d.get('deleted_at', '')}": d
             for d in deleted_list
         }
 
-        col_res1, col_res2 = st.columns([3, 1])
-        with col_res1:
-            selected_del_str = st.selectbox(
-                "اختر التوريد المحذوف الذي ترغب في استرجاعه:",
-                list(del_options.keys()),
-            )
-        with col_res2:
-            st.write("")
-            st.write("")
+        selected_del_str = st.selectbox(
+            "اختر التوريد المحذوف للتحكم به:",
+            list(del_options.keys()),
+        )
+
+        col_act1, col_act2, col_act3 = st.columns([2, 2, 1])
+
+        with col_act1:
             if st.button("↩️ استرجاع التوريد المختار", type="primary"):
                 item_to_restore = del_options[selected_del_str]
                 del_id = item_to_restore.get("id")
@@ -762,13 +761,37 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
                     supabase.table("deleted_payments").delete().eq("id", del_id).execute()
                     st.toast("↩️ تم الاسترجاع بنجاح!", icon="🎉")
-                    st.success("✅ تم استرجاع التوريد وإعادته إلى التوريدات النشطة بنجاح!")
+                    st.success("✅ تم استرجاع التوريد وإعادته للتوريدات النشطة!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"خطأ أثناء استرجاع البيانات: {e}")
 
+        with col_act2:
+            if st.button("❌ حذف نهائي من الأرشيف", type="secondary"):
+                item_to_delete = del_options[selected_del_str]
+                del_id = item_to_delete.get("id")
+                try:
+                    supabase.table("deleted_payments").delete().eq("id", del_id).execute()
+                    st.toast("🗑️ تم الحذف النهائي", icon="🔥")
+                    st.success("✅ تم حذف الحركة نهائياً من أرشيف قاعدة البيانات!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ أثناء الحذف النهائي: {e}")
+
+        with col_act3:
+            if st.button("🔥 إفراغ الأرشيف"):
+                try:
+                    supabase.table("deleted_payments").delete().neq("id", 0).execute()
+                    st.toast("🔥 تم مسح الأرشيف بالكامل", icon="🧹")
+                    st.success("✅ تم إفراغ الأرشيف بالكامل بنجاح!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ أثناء تفريغ الأرشيف: {e}")
+
+        st.write("")
         df_del = pd.DataFrame(deleted_list)
         cols_del = [
+            "id",
             "rider_code",
             "rider_name",
             "date",
@@ -780,6 +803,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
         df_del_show = df_del[available_cols_del].copy()
         df_del_show.rename(
             columns={
+                "id": "معرف الأرشيف",
                 "rider_code": "كود المندوب",
                 "rider_name": "اسم المندوب",
                 "date": "تاريخ التوريد الأصلي",
