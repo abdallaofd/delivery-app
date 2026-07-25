@@ -15,7 +15,6 @@ def init_supabase():
 
 supabase = init_supabase()
 
-# دالة قراءة المناديب
 def get_riders():
     try:
         res = supabase.table("riders").select("*").execute()
@@ -23,7 +22,6 @@ def get_riders():
     except Exception:
         return []
 
-# دالة إدخال مناديب جدد
 def save_riders(riders_list):
     if not riders_list:
         return
@@ -36,12 +34,10 @@ def save_riders(riders_list):
     if new_entries:
         supabase.table("riders").insert(new_entries).execute()
 
-# دالة حفظ التوريدات
 def save_payments(payments_list):
     if payments_list:
         supabase.table("payments").insert(payments_list).execute()
 
-# دالة جلب التوريدات
 def get_payments():
     try:
         res = supabase.table("payments").select("*").execute()
@@ -49,18 +45,15 @@ def get_payments():
     except Exception:
         return []
 
-# دالة حفظ بيانات الداشبورد السحابية
 def save_dashboard_data(df_dash):
     try:
-        # مسح بيانات الداشبورد القديمة واحتفاظ بأحدث إصدار فقط
         supabase.table("dashboard_data").delete().neq("id", 0).execute()
-        
         records = []
         for _, row in df_dash.iterrows():
             records.append({
                 "rider_code": str(row['كود المندوب']).strip(),
                 "rider_name": str(row.get('اسم المندوب', '')).strip(),
-                "amount": float(row.get('العهدة / المستحق', 0)),
+                "amount": float(row.get('العهدة / المستحق', 0)) if pd.notna(row.get('العهدة / المستحق')) else 0.0,
                 "status": str(row.get('الحالة', '')).strip()
             })
         if records:
@@ -68,7 +61,6 @@ def save_dashboard_data(df_dash):
     except Exception as e:
         st.error(f"خطأ في حفظ الداشبورد سحابياً: {e}")
 
-# دالة جلب الداشبورد السحابي المحفوظ
 def get_dashboard_data():
     try:
         res = supabase.table("dashboard_data").select("*").execute()
@@ -98,41 +90,39 @@ if menu == "📊 مطابقة الداشبورد اليومية":
 
     uploaded_dash = st.file_uploader("📂 رفع ملف الداشبورد الجديد (اختياري للتحديث):", type=["csv", "xlsx", "xls"])
     
-    # تحميل الداشبورد الحالي المحفوظ سحابياً أو الملف الجديد
     df_dash = pd.DataFrame()
     
     if uploaded_dash:
         try:
             if uploaded_dash.name.endswith('.csv'):
-                df_dash = pd.read_csv(uploaded_dash)
+                raw_df = pd.read_csv(uploaded_dash)
             else:
-                df_dash = pd.read_excel(uploaded_dash)
+                raw_df = pd.read_excel(uploaded_dash)
             
-            # توحيد أسماء الأعمدة
-            dash_code_col = [c for c in df_dash.columns if 'كود' in str(c) or 'code' in str(c).lower()]
-            dash_amt_col = [c for c in df_dash.columns if 'مبلغ' in str(c) or 'عهدة' in str(c) or 'صافي' in str(c) or 'amount' in str(c).lower()]
-            dash_name_col = [c for c in df_dash.columns if 'اسم' in str(c) or 'name' in str(c).lower()]
-            dash_status_col = [c for c in df_dash.columns if 'حالة' in str(c) or 'status' in str(c).lower()]
+            st.success("📂 تم تحميل الملف بنجاح! اختر الأعمدة لتأكيد القراءة:")
+            
+            c1, c2, c3, c4 = st.columns(4)
+            code_col = c1.selectbox("اختر عمود كود المندوب:", raw_df.columns)
+            amt_col = c2.selectbox("اختر عمود العهدة / المبلغ:", raw_df.columns)
+            name_col = c3.selectbox("اختر عمود اسم المندوب (إن وجد):", [None] + list(raw_df.columns))
+            status_col = c4.selectbox("اختر عمود الحالة (إن وجد):", [None] + list(raw_df.columns))
 
-            if dash_code_col and dash_amt_col:
-                df_dash = df_dash.rename(columns={
-                    dash_code_col[0]: 'كود المندوب',
-                    dash_amt_col[0]: 'العهدة / المستحق'
-                })
-                if dash_name_col:
-                    df_dash = df_dash.rename(columns={dash_name_col[0]: 'اسم المندوب'})
-                if dash_status_col:
-                    df_dash = df_dash.rename(columns={dash_status_col[0]: 'الحالة'})
+            if st.button("🚀 اعتمد الشيت واحفظه سحابياً"):
+                df_dash = raw_df.copy()
+                rename_dict = {code_col: 'كود المندوب', amt_col: 'العهدة / المستحق'}
+                if name_col:
+                    rename_dict[name_col] = 'اسم المندوب'
+                if status_col:
+                    rename_dict[status_col] = 'الحالة'
                 
-                # حفظ في السحابة فوراً
+                df_dash = df_dash.rename(columns=rename_dict)
                 save_dashboard_data(df_dash)
-                st.success("✅ تم تحديث وحفظ شيت الداشبورد الجديد سحابياً بنجاح!")
-            else:
-                st.error("❌ لم يتم التعرف على أعمدة الكود أو المبلغ في الشيت المرفوع.")
+                st.success("✅ تم حفظ وتحديث شيت الداشبورد الجديد سحابياً بنجاح!")
+                st.rerun()
+
         except Exception as e:
             st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
     else:
-        # جلب البيانات من السحابة إذا لم يتم رفع ملف جديد
         cloud_dash = get_dashboard_data()
         if not cloud_dash.empty:
             df_dash = cloud_dash.rename(columns={
@@ -142,16 +132,14 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 'status': 'الحالة'
             })
 
-    # إجراء المطابقة وإظهار النتائج لو البيانات متوفرة
-    if not df_dash.empty:
+    # إظهار النتائج والمطابقة
+    if not df_dash.empty and 'كود المندوب' in df_dash.columns:
         df_dash['كود المندوب'] = df_dash['كود المندوب'].astype(str).str.strip()
         
-        # حفظ أسماء المناديب الجدد أوتوماتيكياً
         if 'اسم المندوب' in df_dash.columns:
             new_riders = [(row['كود المندوب'], row['اسم المندوب']) for _, row in df_dash.iterrows() if pd.notna(row['اسم المندوب'])]
             save_riders(new_riders)
 
-        # جلب التوريدات وحساب الإجمالي لكل مندوب
         payments_data = get_payments()
         if payments_data:
             df_pay = pd.DataFrame(payments_data)
@@ -161,12 +149,10 @@ if menu == "📊 مطابقة الداشبورد اليومية":
         else:
             pay_summary = pd.DataFrame(columns=['كود المندوب', 'إجمالي المورد سحابياً'])
 
-        # دمج الداشبورد مع التوريدات
         merged = pd.merge(df_dash, pay_summary, on='كود المندوب', how='left')
         merged['إجمالي المورد سحابياً'] = merged['إجمالي المورد سحابياً'].fillna(0)
         merged['الصافي المتبقي / العجز'] = merged['العهدة / المستحق'] - merged['إجمالي المورد سحابياً']
 
-        # كروت الأداء Financial Metrics
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("إجمالي العهد المطلوب", f"{merged['العهدة / المستحق'].sum():,.2f} ج.م")
         col2.metric("إجمالي المورد بالسحابة", f"{merged['إجمالي المورد سحابياً'].sum():,.2f} ج.م", delta_color="normal")
@@ -174,21 +160,20 @@ if menu == "📊 مطابقة الداشبورد اليومية":
         
         migrated_count = 0
         if 'الحالة' in merged.columns:
-            migrated_count = len(merged[merged['الحالة'].str.contains('مغادر|مستقيل|منقطع', na=False)])
+            migrated_count = len(merged[merged['الحالة'].astype(str).str.contains('مغادر|مستقيل|منقطع', na=False)])
         col4.metric("عدد المغادرين بمديونية", f"{migrated_count} مندوب")
 
         st.divider()
         st.subheader("📋 جدول مطابقة العُهد والتوريدات التفصيلي")
         st.dataframe(merged, use_container_width=True)
-    else:
-        st.warning("⚠️ لا توجد بيانات داشبورد محفوظة حالياً. يرجى رفع شيت الداشبورد أول مرة للحفظ في السحابة.")
+    elif not uploaded_dash:
+        st.warning("⚠️ لا توجد بيانات داشبورد محفوظة حالياً. يرجى رفع شيت الداشبورد للحفظ في السحابة.")
 
 # ==========================================
-# 4. شاشة إضافة / تسجيل توريد يومي
+# 4. باقي الشاشات
 # ==========================================
 elif menu == "➕ إضافة / تسجيل توريد يومي":
     st.header("➕ تسجيل توريد جديد")
-    
     tab1, tab2 = st.tabs(["📝 تسجيل فردي", "📂 رفع شيت توريدات بالجملة"])
     
     riders_data = get_riders()
@@ -245,18 +230,13 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
             except Exception as e:
                 st.error(f"خطأ في معالجة الملف: {e}")
 
-# ==========================================
-# 5. شاشة إدارة أسماء المناديب
-# ==========================================
 elif menu == "👥 إدارة أسماء المناديب":
     st.header("👥 أسماء المناديب المسجلين سحابياً")
-    
     with st.form("add_rider_form"):
         c1, c2 = st.columns(2)
         new_code = c1.text_input("كود المندوب:")
         new_name = c2.text_input("اسم المندوب:")
         submit = st.form_submit_button("إضافة مندوب جديد")
-        
         if submit and new_code and new_name:
             save_riders([(new_code, new_name)])
             st.success(f"تم إضافة المندوب {new_name} بنجاح!")
@@ -267,9 +247,6 @@ elif menu == "👥 إدارة أسماء المناديب":
     else:
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
-# ==========================================
-# 6. شاشة سجل التوريدات الشهري
-# ==========================================
 elif menu == "📜 سجل التوريدات الشهري":
     st.header("📜 سجل التوريدات الموردة سحابياً")
     pay_data = get_payments()
