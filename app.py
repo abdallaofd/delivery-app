@@ -1,769 +1,281 @@
 import io
-import json
-import os
-import re
 import pandas as pd
 import streamlit as st
+from supabase import create_client
 
 # ==========================================
-# 1. إعدادات الصفحة والتصميم الاحترافي المنسق
+# 1. إعدادات الاتصال بقاعدة البيانات السحابية (Supabase)
 # ==========================================
-st.set_page_config(
-    page_title="نظام إدارة الداشبورد والتوريدات",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+SUPABASE_URL = "https://xoiwmchqsluhgygkfsvm.supabase.co"
+SUPABASE_KEY = "sb_publishable_TVd6D2jmfePoUZq0QEn-jw_OI560HWH"
 
-# تطبيق CSS متقدم لتوسيق العناوين وتجميل العناصر
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
-        direction: rtl;
-        text-align: right;
-    }
-    
-    /* الخلفية العامة */
-    .stApp {
-        background-color: #f8fafc;
-    }
-    
-    /* العناوين الرئيسية المتمركزة في منتصف الصفحة */
-    .main-header {
-        background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
-        color: white;
-        padding: 25px 20px;
-        border-radius: 16px;
-        margin-bottom: 30px;
-        text-align: center !important;
-        box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.25);
-    }
-    
-    .main-header h1 {
-        margin: 0 !important;
-        font-size: 28px !important;
-        font-weight: 800 !important;
-        color: #ffffff !important;
-        text-align: center !important;
-    }
-    
-    .main-header p {
-        margin: 8px 0 0 0 !important;
-        font-size: 15px !important;
-        opacity: 0.92;
-        text-align: center !important;
-    }
+@st.cache_resource
+def init_supabase():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    /* العناوين الفرعية لتكون في المنتصف ومحددة */
-    .section-title {
-        text-align: center !important;
-        color: #1e293b;
-        font-weight: 700;
-        font-size: 20px;
-        margin-top: 15px;
-        margin-bottom: 20px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #e2e8f0;
-    }
-    
-    /* تحسين وتوسيط البطاقات الإحصائية KPIs */
-    div[data-testid="stMetric"] {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-top: 4px solid #2563eb;
-        border-radius: 12px;
-        padding: 16px;
-        text-align: center !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-    }
-    
-    div[data-testid="stMetric"] label {
-        justify-content: center !important;
-        font-weight: 700 !important;
-        color: #64748b !important;
-    }
+supabase = init_supabase()
 
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        justify-content: center !important;
-        font-weight: 800 !important;
-        color: #0f172a !important;
-    }
-    
-    /* تحسين الأزرار */
-    .stButton > button {
-        border-radius: 10px;
-        font-weight: 700;
-        font-size: 15px;
-        padding: 10px 24px;
-        width: 100%;
-        transition: all 0.3s ease;
-    }
-    
-    /* القائمة الجانبية */
-    section[data-testid="stSidebar"] {
-        background-color: #0f172a;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #f1f5f9 !important;
-    }
+# دالة قراءة المناديب
+def get_riders():
+    try:
+        res = supabase.table("riders").select("*").execute()
+        return res.data if res.data else []
+    except Exception:
+        return []
 
-    /* أسلوب التنبيهات */
-    .stAlert {
-        border-radius: 10px;
-        text-align: center;
-    }
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+# دالة إدخال مناديب جدد
+def save_riders(riders_list):
+    if not riders_list:
+        return
+    existing = {str(r["code"]).strip(): r["name"] for r in get_riders()}
+    new_entries = []
+    for code, name in riders_list:
+        str_code = str(code).strip()
+        if str_code and str_code not in existing:
+            new_entries.append({"code": str_code, "name": str(name).strip()})
+    if new_entries:
+        supabase.table("riders").insert(new_entries).execute()
 
-DB_FILE = "database.json"
+# دالة حفظ التوريدات
+def save_payments(payments_list):
+    if payments_list:
+        supabase.table("payments").insert(payments_list).execute()
 
+# دالة جلب التوريدات
+def get_payments():
+    try:
+        res = supabase.table("payments").select("*").execute()
+        return res.data if res.data else []
+    except Exception:
+        return []
+
+# دالة حفظ بيانات الداشبورد السحابية
+def save_dashboard_data(df_dash):
+    try:
+        # مسح بيانات الداشبورد القديمة واحتفاظ بأحدث إصدار فقط
+        supabase.table("dashboard_data").delete().neq("id", 0).execute()
+        
+        records = []
+        for _, row in df_dash.iterrows():
+            records.append({
+                "rider_code": str(row['كود المندوب']).strip(),
+                "rider_name": str(row.get('اسم المندوب', '')).strip(),
+                "amount": float(row.get('العهدة / المستحق', 0)),
+                "status": str(row.get('الحالة', '')).strip()
+            })
+        if records:
+            supabase.table("dashboard_data").insert(records).execute()
+    except Exception as e:
+        st.error(f"خطأ في حفظ الداشبورد سحابياً: {e}")
+
+# دالة جلب الداشبورد السحابي المحفوظ
+def get_dashboard_data():
+    try:
+        res = supabase.table("dashboard_data").select("*").execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
 
 # ==========================================
-# 2. دوال إدارة قاعدة البيانات المحلية
+# 2. إعدادات الصفحة والواجهة
 # ==========================================
-def load_db():
-  if os.path.exists(DB_FILE):
-    with open(DB_FILE, "r", encoding="utf-8") as f:
-      return json.load(f)
-  return {"riders": [], "payments": []}
+st.set_page_config(page_title="نظام إدارة الداشبورد والتوريدات", layout="wide", initial_sidebar_state="expanded")
 
-
-def save_db(db):
-  with open(DB_FILE, "w", encoding="utf-8") as f:
-    json.dump(db, f, ensure_ascii=False, indent=4)
-
-
-db = load_db()
-
-
-def clean_text(text):
-  if pd.isna(text):
-    return ""
-  text = str(text).strip().lower()
-  text = re.sub(r"\s+", " ", text)
-  return text
-
-
-def auto_register_rider(code, name):
-  """تسجيل المندوب تلقائياً في قائمة المناديب إن لم يكن موجوداً"""
-  if not name or str(name).strip() == "":
-    return
-  code_str = str(code).strip() if pd.notna(code) else ""
-  name_str = str(name).strip()
-
-  existing_riders = db.get("riders", [])
-  exists = any(
-      r.get("name") == name_str or (code_str and r.get("code") == code_str)
-      for r in existing_riders
-  )
-
-  if not exists:
-    db["riders"].append({"code": code_str, "name": name_str})
-    save_db(db)
-
-
-# ==========================================
-# 3. القائمة الجانبية
-# ==========================================
-st.sidebar.markdown(
-    "<h2 style='text-align: center; margin-bottom: 20px;'>⚡ لوحة التحكم</h2>",
-    unsafe_allow_html=True,
-)
-st.sidebar.markdown("---")
-
+st.sidebar.title("⚡ لوحة التحكم")
 menu = st.sidebar.radio(
     "الانتقال إلى الشاشة:",
-    [
-        "📊 مطابقة الداشبورد اليومية",
-        "➕ إضافة / تسجيل توريد يومي",
-        "👥 إدارة أسماء المناديب",
-        "📜 سجل التوريدات الشهرية",
-    ],
+    ["📊 مطابقة الداشبورد اليومية", "➕ إضافة / تسجيل توريد يومي", "👥 إدارة أسماء المناديب", "📜 سجل التوريدات الشهري"]
 )
 
 # ==========================================
-# الشاشة الأولى: مطابقة الداشبورد اليومية
+# 3. شاشة مطابقة الداشبورد
 # ==========================================
 if menu == "📊 مطابقة الداشبورد اليومية":
-  st.markdown(
-      """
-    <div class="main-header">
-        <h1>📊 مطابقة عهدة الداشبورد مع التوريدات الشهرية</h1>
-        <p>متابعة عجز المناديب، صافي المستحقات، وحالات المغادرين بشكل مباشر ودقيق</p>
-    </div>
-    """,
-      unsafe_allow_html=True,
-  )
+    st.markdown("<h2 style='text-align: center; color: #1E88E5;'>📊 مطابقة عهدة الداشبورد مع التوريدات السحابية</h2>", unsafe_allow_html=True)
+    st.info("💡 البيانات المجهزة محفوظة سحابياً تلقائياً، ويمكنك تحديث شيت الداشبورد في أي وقت عند صدور شيت جديد.")
 
-  c_up, c_rst = st.columns([4, 1])
-  with c_up:
-    dash_file = st.file_uploader(
-        "📥 ارفع ملف الداشبورد الحالي (CSV أو Excel)",
-        type=["csv", "xlsx", "xls"],
-    )
-  with c_rst:
-    if "dash_df_processed" in st.session_state:
-      st.write("")
-      st.write("")
-      if st.button("🔄 إزالة الملف"):
-        del st.session_state["dash_df_processed"]
-        st.rerun()
-
-  if dash_file:
-    try:
-      if dash_file.name.endswith(".csv"):
+    uploaded_dash = st.file_uploader("📂 رفع ملف الداشبورد الجديد (اختياري للتحديث):", type=["csv", "xlsx", "xls"])
+    
+    # تحميل الداشبورد الحالي المحفوظ سحابياً أو الملف الجديد
+    df_dash = pd.DataFrame()
+    
+    if uploaded_dash:
         try:
-          df_dash_raw = pd.read_csv(dash_file)
-        except:
-          dash_file.seek(0)
-          df_dash_raw = pd.read_csv(dash_file, encoding="utf-8-sig")
-      else:
-        df_dash_raw = pd.read_excel(dash_file)
+            if uploaded_dash.name.endswith('.csv'):
+                df_dash = pd.read_csv(uploaded_dash)
+            else:
+                df_dash = pd.read_excel(uploaded_dash)
+            
+            # توحيد أسماء الأعمدة
+            dash_code_col = [c for c in df_dash.columns if 'كود' in str(c) or 'code' in str(c).lower()]
+            dash_amt_col = [c for c in df_dash.columns if 'مبلغ' in str(c) or 'عهدة' in str(c) or 'صافي' in str(c) or 'amount' in str(c).lower()]
+            dash_name_col = [c for c in df_dash.columns if 'اسم' in str(c) or 'name' in str(c).lower()]
+            dash_status_col = [c for c in df_dash.columns if 'حالة' in str(c) or 'status' in str(c).lower()]
 
-      dash_cols = df_dash_raw.columns.tolist()
-      id_col = next(
-          (
-              c
-              for c in dash_cols
-              if "id" in str(c).lower() or "كود" in str(c).lower()
-          ),
-          dash_cols[0],
-      )
-      name_col_dash = next(
-          (
-              c
-              for c in dash_cols
-              if "name" in str(c).lower() or "اسم" in str(c).lower()
-          ),
-          dash_cols[1] if len(dash_cols) > 1 else dash_cols[0],
-      )
-      cod_col = next(
-          (
-              c
-              for c in dash_cols
-              if any(
-                  k in str(c).lower()
-                  for k in ["cod", "balance", "عهدة", "عجز", "مستحق"]
-              )
-          ),
-          dash_cols[-1],
-      )
-      status_col = next(
-          (
-              c
-              for c in dash_cols
-              if "status" in str(c).lower() or "حالة" in str(c).lower()
-          ),
-          None,
-      )
-      vendor_col = next(
-          (
-              c
-              for c in dash_cols
-              if "vendor" in str(c).lower() or "شركة" in str(c).lower()
-          ),
-          None,
-      )
-
-      df_dash = df_dash_raw.dropna(subset=[name_col_dash]).copy()
-      df_dash["Name_Clean"] = df_dash[name_col_dash].apply(clean_text)
-      df_dash["COD_Balance"] = pd.to_numeric(
-          df_dash[cod_col], errors="coerce"
-      ).fillna(0)
-
-      # تسجيل تلقائي للمناديب
-      for _, r_item in df_dash.iterrows():
-        auto_register_rider(r_item[id_col], r_item[name_col_dash])
-
-      st.session_state["dash_df_processed"] = {
-          "df_dash": df_dash,
-          "id_col": id_col,
-          "name_col_dash": name_col_dash,
-          "cod_col": cod_col,
-          "status_col": status_col,
-          "vendor_col": vendor_col,
-      }
-    except Exception as e:
-      st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
-
-  if "dash_df_processed" in st.session_state:
-    data_dict = st.session_state["dash_df_processed"]
-    df_dash = data_dict["df_dash"]
-    id_col = data_dict["id_col"]
-    name_col_dash = data_dict["name_col_dash"]
-    status_col = data_dict["status_col"]
-    vendor_col = data_dict["vendor_col"]
-
-    payments_list = db.get("payments", [])
-    if payments_list:
-      df_pay_db = pd.DataFrame(payments_list)
-      df_pay_db["Name_Clean"] = df_pay_db["rider_name"].apply(clean_text)
-      pay_sum = df_pay_db.groupby("Name_Clean")["amount"].sum().reset_index()
+            if dash_code_col and dash_amt_col:
+                df_dash = df_dash.rename(columns={
+                    dash_code_col[0]: 'كود المندوب',
+                    dash_amt_col[0]: 'العهدة / المستحق'
+                })
+                if dash_name_col:
+                    df_dash = df_dash.rename(columns={dash_name_col[0]: 'اسم المندوب'})
+                if dash_status_col:
+                    df_dash = df_dash.rename(columns={dash_status_col[0]: 'الحالة'})
+                
+                # حفظ في السحابة فوراً
+                save_dashboard_data(df_dash)
+                st.success("✅ تم تحديث وحفظ شيت الداشبورد الجديد سحابياً بنجاح!")
+            else:
+                st.error("❌ لم يتم التعرف على أعمدة الكود أو المبلغ في الشيت المرفوع.")
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
     else:
-      pay_sum = pd.DataFrame(columns=["Name_Clean", "amount"])
+        # جلب البيانات من السحابة إذا لم يتم رفع ملف جديد
+        cloud_dash = get_dashboard_data()
+        if not cloud_dash.empty:
+            df_dash = cloud_dash.rename(columns={
+                'rider_code': 'كود المندوب',
+                'rider_name': 'اسم المندوب',
+                'amount': 'العهدة / المستحق',
+                'status': 'الحالة'
+            })
 
-    merged = pd.merge(
-        df_dash,
-        pay_sum.rename(columns={"amount": "Total_Paid"}),
-        on="Name_Clean",
-        how="left",
-    )
-    merged["Total_Paid"] = merged["Total_Paid"].fillna(0)
-    merged["Remaining_Balance"] = merged["COD_Balance"] - merged["Total_Paid"]
+    # إجراء المطابقة وإظهار النتائج لو البيانات متوفرة
+    if not df_dash.empty:
+        df_dash['كود المندوب'] = df_dash['كود المندوب'].astype(str).str.strip()
+        
+        # حفظ أسماء المناديب الجدد أوتوماتيكياً
+        if 'اسم المندوب' in df_dash.columns:
+            new_riders = [(row['كود المندوب'], row['اسم المندوب']) for _, row in df_dash.iterrows() if pd.notna(row['اسم المندوب'])]
+            save_riders(new_riders)
 
-    def categorize(row):
-      cod = row["COD_Balance"]
-      paid = row["Total_Paid"]
-      rem = row["Remaining_Balance"]
-      status = str(row[status_col]).lower() if status_col else ""
+        # جلب التوريدات وحساب الإجمالي لكل مندوب
+        payments_data = get_payments()
+        if payments_data:
+            df_pay = pd.DataFrame(payments_data)
+            df_pay['rider_code'] = df_pay['rider_code'].astype(str).str.strip()
+            pay_summary = df_pay.groupby('rider_code')['amount'].sum().reset_index()
+            pay_summary.columns = ['كود المندوب', 'إجمالي المورد سحابياً']
+        else:
+            pay_summary = pd.DataFrame(columns=['كود المندوب', 'إجمالي المورد سحابياً'])
 
-      if status == "left" and rem > 0:
-        return "⚠️ مغادر وعليه مديونية"
-      elif rem <= 0 and cod > 0:
-        return "🟢 تم التسوية بالكامل"
-      elif paid > 0 and rem > 0:
-        return "🟡 توريد جزئي (متبقي فلوس)"
-      elif cod > 0 and paid == 0:
-        return "🔴 لم يورد إطلاقاً"
-      else:
-        return "⚪ لا يوجد عليه عهدة"
+        # دمج الداشبورد مع التوريدات
+        merged = pd.merge(df_dash, pay_summary, on='كود المندوب', how='left')
+        merged['إجمالي المورد سحابياً'] = merged['إجمالي المورد سحابياً'].fillna(0)
+        merged['الصافي المتبقي / العجز'] = merged['العهدة / المستحق'] - merged['إجمالي المورد سحابياً']
 
-    merged["الحالة المالية"] = merged.apply(categorize, axis=1)
+        # كروت الأداء Financial Metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("إجمالي العهد المطلوب", f"{merged['العهدة / المستحق'].sum():,.2f} ج.م")
+        col2.metric("إجمالي المورد بالسحابة", f"{merged['إجمالي المورد سحابياً'].sum():,.2f} ج.م", delta_color="normal")
+        col3.metric("إجمالي المتبقي (العجز)", f"{merged['الصافي المتبقي / العجز'].sum():,.2f} ج.م", delta_color="inverse")
+        
+        migrated_count = 0
+        if 'الحالة' in merged.columns:
+            migrated_count = len(merged[merged['الحالة'].str.contains('مغادر|مستقيل|منقطع', na=False)])
+        col4.metric("عدد المغادرين بمديونية", f"{migrated_count} مندوب")
 
-    st.markdown(
-        "<div class='section-title'>📈 ملخص موقف العهد والتوريدات</div>",
-        unsafe_allow_html=True,
-    )
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "إجمالي عهدة الداشبورد", f"{merged['COD_Balance'].sum():,.2f} ج.م"
-    )
-    c2.metric(
-        "إجمالي التوريدات المسجلة", f"{merged['Total_Paid'].sum():,.2f} ج.م"
-    )
-    c3.metric(
-        "الصافي المطلوب تحصيله", f"{merged['Remaining_Balance'].sum():,.2f} ج.م"
-    )
-    c4.metric(
-        "مناديب مغادرين بمديونية",
-        f"{merged[merged['الحالة المالية'] == '⚠️ مغادر وعليه مديونية'].shape[0]} مندوب",
-    )
-
-    st.divider()
-
-    status_filter = st.multiselect(
-        "تصفية التقرير حسب الحالة المالية:",
-        options=merged["الحالة المالية"].unique(),
-        default=merged["الحالة المالية"].unique(),
-    )
-    filtered_df = merged[merged["الحالة المالية"].isin(status_filter)]
-
-    display_cols = [id_col, name_col_dash]
-    if status_col:
-      display_cols.append(status_col)
-    if vendor_col:
-      display_cols.append(vendor_col)
-    display_cols.extend(
-        ["COD_Balance", "Total_Paid", "Remaining_Balance", "الحالة المالية"]
-    )
-
-    final_table = filtered_df[display_cols].copy()
-    final_table.rename(
-        columns={
-            id_col: "كود المندوب",
-            name_col_dash: "اسم المندوب",
-            "COD_Balance": "عهدة الداشبورد",
-            "Total_Paid": "إجمالي المورد هذا الشهر",
-            "Remaining_Balance": "المتبقي الفعلي",
-        },
-        inplace=True,
-    )
-
-    st.dataframe(
-        final_table.sort_values(by="المتبقي الفعلي", ascending=False),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-      final_table.to_excel(writer, sheet_name="متابعة التوريدات", index=False)
-
-    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-    with col_btn2:
-      st.download_button(
-          label="📥 تحميل التقرير التفصيلي كملف Excel",
-          data=output.getvalue(),
-          file_name="تقرير_المتابعة_الفعلي.xlsx",
-          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          type="primary",
-      )
-  elif not dash_file:
-    st.info("👈 يرجى رفع ملف الداشبورد لعرض الموقف المالي للمناديب.")
+        st.divider()
+        st.subheader("📋 جدول مطابقة العُهد والتوريدات التفصيلي")
+        st.dataframe(merged, use_container_width=True)
+    else:
+        st.warning("⚠️ لا توجد بيانات داشبورد محفوظة حالياً. يرجى رفع شيت الداشبورد أول مرة للحفظ في السحابة.")
 
 # ==========================================
-# الشاشة الثانية: تسجيل توريد يومي
+# 4. شاشة إضافة / تسجيل توريد يومي
 # ==========================================
 elif menu == "➕ إضافة / تسجيل توريد يومي":
-  st.markdown(
-      """
-    <div class="main-header">
-        <h1>➕ تسجيل توريد جديد للمندوب</h1>
-        <p>تسجيل المبالغ الموردة إما فردياً أو رفعة واحدة عن طريق شيت أكسيل</p>
-    </div>
-    """,
-      unsafe_allow_html=True,
-  )
+    st.header("➕ تسجيل توريد جديد")
+    
+    tab1, tab2 = st.tabs(["📝 تسجيل فردي", "📂 رفع شيت توريدات بالجملة"])
+    
+    riders_data = get_riders()
+    rider_options = {f"{r['code']} - {r['name']}": r['code'] for r in riders_data} if riders_data else {}
 
-  col1, col2 = st.columns(2)
+    with tab1:
+        if not rider_options:
+            st.warning("لا يوجد مناديب مسجلين، يرجى إضافة مناديب أو رفع شيت أولاً.")
+        else:
+            selected_rider_str = st.selectbox("اختر المندوب:", list(rider_options.keys()))
+            rider_code = rider_options[selected_rider_str]
+            rider_name = selected_rider_str.split(" - ")[1]
+            
+            pay_date = st.date_input("تاريخ التوريد:")
+            amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
+            notes = st.text_input("ملاحظات / رقم الإيصال:")
 
-  with col1:
-    st.markdown(
-        "<div class='section-title'>1️⃣ تسجيل توريد فردي</div>",
-        unsafe_allow_html=True,
-    )
-    riders_data = db.get("riders", [])
-
-    if not riders_data:
-      st.warning("⚠️ لا يوجد مناديب مسجلين بعد.")
-      rider_code_input = st.text_input("كود المندوب:")
-      rider_name_input = st.text_input("اسم المندوب:")
-      selected_rider_name = rider_name_input
-      selected_rider_code = rider_code_input
-    else:
-      rider_options = {
-          f"{r.get('code', '')} - {r['name']}": r for r in riders_data
-      }
-      choice = st.selectbox("اختر المندوب:", list(rider_options.keys()))
-      selected_rider_name = rider_options[choice]["name"]
-      selected_rider_code = rider_options[choice].get("code", "")
-
-    pay_date = st.date_input("تاريخ التوريد:")
-    amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
-    notes = st.text_input("ملاحظات / رقم الإيصال (اختياري):")
-
-    if st.button("💾 حفظ التوريد الفردي", type="primary"):
-      if selected_rider_name and amount > 0:
-        auto_register_rider(selected_rider_code, selected_rider_name)
-
-        db["payments"].append({
-            "rider_code": str(selected_rider_code),
-            "rider_name": selected_rider_name,
-            "date": str(pay_date),
-            "amount": amount,
-            "notes": notes if notes else "تعديل/إدخال يدوي",
-        })
-        save_db(db)
-        st.success(
-            f"✅ تم تسجيل توريد بمبلغ {amount} ج.م للمندوب"
-            f" ({selected_rider_name}) بنجاح!"
-        )
-      else:
-        st.error("يرجى إدخال البيانات ومبلغ أكبر من صفر.")
-
-  with col2:
-    st.markdown(
-        "<div class='section-title'>2️⃣ رفع شيت توريدات (جملة)</div>",
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "الأعمدة المقبولة في الشيت: كود المندوب | الاسم | التاريخ | المبلغ |"
-        " ملاحظات"
-    )
-    batch_file = st.file_uploader(
-        "ارفع شيت التوريدات (Excel/CSV)",
-        type=["xlsx", "xls", "csv"],
-        key="batch",
-    )
-
-    if batch_file:
-      if st.button("📥 استيراد التوريدات الآن", type="primary"):
-        try:
-          df_b = (
-              pd.read_csv(batch_file)
-              if batch_file.name.endswith(".csv")
-              else pd.read_excel(batch_file)
-          )
-          cols = df_b.columns.tolist()
-
-          code_c = next(
-              (
-                  c
-                  for c in cols
-                  if "id" in str(c).lower() or "كود" in str(c).lower()
-              ),
-              None,
-          )
-          name_c = next(
-              (
-                  c
-                  for c in cols
-                  if any(
-                      k in str(c).lower()
-                      for k in [
-                          "name",
-                          "اسم",
-                          "الطيار",
-                          "rider",
-                          "driver",
-                          "row labels",
-                      ]
-                  )
-              ),
-              cols[0],
-          )
-          amount_c = next(
-              (
-                  c
-                  for c in cols
-                  if any(
-                      k in str(c).lower()
-                      for k in [
-                          "earnings",
-                          "مستحقات",
-                          "أرباح",
-                          "ارباح",
-                          "مبلغ",
-                          "مديونية",
-                          "paid",
-                          "amount",
-                          "sum",
-                      ]
-                  )
-              ),
-              cols[-1],
-          )
-          date_c = next(
-              (
-                  c
-                  for c in cols
-                  if "date" in str(c).lower() or "تاريخ" in str(c).lower()
-              ),
-              None,
-          )
-          notes_c = next(
-              (
-                  c
-                  for c in cols
-                  if "note" in str(c).lower()
-                  or "ملاحظ" in str(c).lower()
-                  or "إيصال" in str(c).lower()
-                  or "ايصال" in str(c).lower()
-              ),
-              None,
-          )
-
-          count = 0
-          for _, r in df_b.iterrows():
-            if pd.notna(r[name_c]) and pd.notna(r[amount_c]):
-              try:
-                amt_val = float(
-                    str(r[amount_c]).replace(",", "").strip()
-                )
-                r_name_val = str(r[name_c]).strip()
-                r_code_val = str(r[code_c]).strip() if code_c else ""
-
-                if date_c and pd.notna(r[date_c]):
-                  r_date_val = str(
-                      pd.to_datetime(r[date_c], errors="coerce").date()
-                  )
+            if st.button("💾 حفظ التوريد السحابي", type="primary"):
+                if amount > 0:
+                    save_payments([{
+                        "rider_code": str(rider_code),
+                        "rider_name": rider_name,
+                        "date": str(pay_date),
+                        "amount": float(amount),
+                        "notes": notes
+                    }])
+                    st.success(f"تم تسجيل توريد بمبلغ {amount} ج.م للمندوب {rider_name} بنجاح!")
                 else:
-                  r_date_val = str(pd.Timestamp.now().date())
+                    st.error("يرجى إدخال مبلغ أكبر من الصفر.")
 
-                r_notes_val = (
-                    str(r[notes_c]).strip()
-                    if (notes_c and pd.notna(r[notes_c]))
-                    else "استيراد ملف توريدات"
-                )
-
-                if amt_val > 0 and r_name_val:
-                  # التسجيل التلقائي للمندوب
-                  auto_register_rider(r_code_val, r_name_val)
-
-                  # منع التكرار
-                  duplicate = any(
-                      p.get("rider_name") == r_name_val
-                      and p.get("date") == r_date_val
-                      and float(p.get("amount", 0)) == amt_val
-                      and p.get("notes") == r_notes_val
-                      for p in db["payments"]
-                  )
-
-                  if not duplicate:
-                    db["payments"].append({
-                        "rider_code": r_code_val,
-                        "rider_name": r_name_val,
-                        "date": r_date_val,
-                        "amount": amt_val,
-                        "notes": r_notes_val,
-                    })
-                    count += 1
-              except ValueError:
-                continue
-
-          save_db(db)
-          if count > 0:
-            st.success(f"✅ تم استيراد {count} عملية توريد بنجاح دون أي تكرار!")
-          else:
-            st.info("ℹ️ جميع التوريدات المذكورة في الشيت مسجلة بالفعل سابقاً.")
-        except Exception as e:
-          st.error(f"خطأ في الاستيراد: {e}")
+    with tab2:
+        uploaded_pay = st.file_uploader("ارفع شيت التوريدات (Excel/CSV):", type=["csv", "xlsx", "xls"])
+        if uploaded_pay:
+            try:
+                df_p = pd.read_csv(uploaded_pay) if uploaded_pay.name.endswith('.csv') else pd.read_excel(uploaded_pay)
+                st.write("معاينة البيانات المرفوعة:", df_p.head())
+                
+                code_col = st.selectbox("اختر عمود كود المندوب:", df_p.columns)
+                amt_col = st.selectbox("اختر عمود المبلغ:", df_p.columns)
+                date_col = st.selectbox("اختر عمود التاريخ (إن وجد):", [None] + list(df_p.columns))
+                
+                if st.button("🚀 رفع التوريدات دفعة واحدة إلى السحابة"):
+                    p_records = []
+                    for _, row in df_p.iterrows():
+                        p_records.append({
+                            "rider_code": str(row[code_col]).strip(),
+                            "rider_name": "",
+                            "date": str(row[date_col]) if date_col and pd.notna(row[date_col]) else str(pd.Timestamp.now().date()),
+                            "amount": float(row[amt_col]) if pd.notna(row[amt_col]) else 0.0,
+                            "notes": "رفع بالجملة"
+                        })
+                    save_payments(p_records)
+                    st.success("✅ تم حفظ جميع التوريدات في قاعدة البيانات السحابية بنجاح!")
+            except Exception as e:
+                st.error(f"خطأ في معالجة الملف: {e}")
 
 # ==========================================
-# الشاشة الثالثة: إدارة أسماء المناديب
+# 5. شاشة إدارة أسماء المناديب
 # ==========================================
 elif menu == "👥 إدارة أسماء المناديب":
-  st.markdown(
-      """
-    <div class="main-header">
-        <h1>👥 إدارة بيانات المناديب الثابتة</h1>
-        <p>يتم إضافة المناديب هنا تلقائياً بمجرد رفع أي شيت، ويمكنك الإضافة والتحكم يدوياً</p>
-    </div>
-    """,
-      unsafe_allow_html=True,
-  )
+    st.header("👥 أسماء المناديب المسجلين سحابياً")
+    
+    with st.form("add_rider_form"):
+        c1, c2 = st.columns(2)
+        new_code = c1.text_input("كود المندوب:")
+        new_name = c2.text_input("اسم المندوب:")
+        submit = st.form_submit_button("إضافة مندوب جديد")
+        
+        if submit and new_code and new_name:
+            save_riders([(new_code, new_name)])
+            st.success(f"تم إضافة المندوب {new_name} بنجاح!")
 
-  col1, col2 = st.columns(2)
-
-  with col1:
-    st.markdown(
-        "<div class='section-title'>1️⃣ إضافة مندوب فردي</div>",
-        unsafe_allow_html=True,
-    )
-    r_code = st.text_input("كود المندوب (ID):")
-    r_name = st.text_input("اسم المندوب بالكامل:")
-    if st.button("إضافة المندوب", type="primary"):
-      if r_name:
-        auto_register_rider(r_code, r_name)
-        st.success("تمت إضافة المندوب بنجاح!")
-        st.rerun()
-
-  with col2:
-    st.markdown(
-        "<div class='section-title'>2️⃣ رفع شيت المناديب (جملة)</div>",
-        unsafe_allow_html=True,
-    )
-    st.caption("شيت يحتوي على: (كود المندوب | اسم المندوب)")
-    riders_file = st.file_uploader(
-        "ارفع شيت المناديب", type=["xlsx", "xls", "csv"], key="riders_file"
-    )
-    if riders_file:
-      if st.button("📥 حفظ كادر المناديب"):
-        try:
-          df_r = (
-              pd.read_csv(riders_file)
-              if riders_file.name.endswith(".csv")
-              else pd.read_excel(riders_file)
-          )
-          cols = df_r.columns.tolist()
-
-          code_col = next(
-              (
-                  c
-                  for c in cols
-                  if "id" in str(c).lower() or "كود" in str(c).lower()
-              ),
-              cols[0],
-          )
-          name_col = next(
-              (
-                  c
-                  for c in cols
-                  if "name" in str(c).lower() or "اسم" in str(c).lower()
-              ),
-              cols[1] if len(cols) > 1 else cols[0],
-          )
-
-          added_count = 0
-          for _, row in df_r.iterrows():
-            c_val = str(row[code_col]).strip() if pd.notna(row[code_col]) else ""
-            n_val = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
-
-            if n_val:
-              before = len(db.get("riders", []))
-              auto_register_rider(c_val, n_val)
-              after = len(db.get("riders", []))
-              if after > before:
-                added_count += 1
-
-          st.success(f"✅ تم إضافة {added_count} مندوب جديد للقائمة!")
-          st.rerun()
-        except Exception as e:
-          st.error(f"حدث خطأ أثناء قراءة شيت المناديب: {e}")
-
-  st.divider()
-  st.markdown(
-      "<div class='section-title'>📋 قائمة المناديب المسجلة بالنظام</div>",
-      unsafe_allow_html=True,
-  )
-  if db.get("riders"):
-    df_riders_show = pd.DataFrame(db["riders"])
-    df_riders_show.columns = ["كود المندوب", "اسم المندوب"]
-    st.dataframe(df_riders_show, use_container_width=True, hide_index=True)
-
-    col_del1, col_del2, col_del3 = st.columns([1, 2, 1])
-    with col_del2:
-      if st.button("🗑️ مسح جميع المناديب المسجلين"):
-        db["riders"] = []
-        save_db(db)
-        st.success("تم مسح القائمة.")
-        st.rerun()
-  else:
-    st.info("لا يوجد مناديب مضافين حالياً.")
+    riders_list = get_riders()
+    if riders_list:
+        st.dataframe(pd.DataFrame(riders_list), use_container_width=True)
+    else:
+        st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: سجل التوريدات
+# 6. شاشة سجل التوريدات الشهري
 # ==========================================
-elif menu == "📜 سجل التوريدات الشهرية":
-  st.markdown(
-      """
-    <div class="main-header">
-        <h1>📜 جميع التوريدات المسجلة هذا الشهر</h1>
-        <p>سجل شامل بجميع الحركات والإيداعات المالية المسجلة ببياناتها الدقيقة</p>
-    </div>
-    """,
-      unsafe_allow_html=True,
-  )
-
-  if db.get("payments"):
-    df_p = pd.DataFrame(db["payments"])
-
-    cols_order = ["rider_code", "rider_name", "date", "amount", "notes"]
-    for col in cols_order:
-      if col not in df_p.columns:
-        df_p[col] = ""
-
-    df_p = df_p[cols_order]
-
-    rename_dict = {
-        "rider_code": "كود المندوب",
-        "rider_name": "اسم المندوب",
-        "date": "التاريخ",
-        "amount": "المبلغ المورد",
-        "notes": "ملاحظات",
-    }
-    df_p.rename(columns=rename_dict, inplace=True)
-
-    st.dataframe(df_p, use_container_width=True, hide_index=True)
-
-    col_del1, col_del2, col_del3 = st.columns([1, 2, 1])
-    with col_del2:
-      if st.button("🗑️ مسح جميع التوريدات (بدء شهر جديد)", type="secondary"):
-        db["payments"] = []
-        save_db(db)
-        st.success("تم تفريغ السجل لبداية شهر جديد.")
-        st.rerun()
-  else:
-    st.info("السجل فارغ حتى الآن.")
+elif menu == "📜 سجل التوريدات الشهري":
+    st.header("📜 سجل التوريدات الموردة سحابياً")
+    pay_data = get_payments()
+    if pay_data:
+        df_p = pd.DataFrame(pay_data)
+        st.dataframe(df_p, use_container_width=True)
+        st.metric("إجمالي التوريدات المسجلة", f"{df_p['amount'].sum():,.2f} ج.م")
+    else:
+        st.info("لا توجد توريدات مسجلة حتى الآن.")
