@@ -18,7 +18,6 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# دوال قراءة وحفظ البيانات من مباشرة
 def get_riders():
     try:
         res = supabase.table("riders").select("*").execute()
@@ -106,7 +105,7 @@ def clean_text(text):
 
 
 # ==========================================
-# 2. إعدادات الصفحة والتصميم الاحترافي المنسق
+# 2. إعدادات الصفحة والـ CSS الاحترافي الشامل
 # ==========================================
 st.set_page_config(
     page_title="نظام إدارة الداشبورد والتوريدات",
@@ -118,114 +117,152 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
     
-    html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
-        direction: rtl;
-        text-align: right;
+    /* 1. التنسيق العام للخط والصفحة */
+    html, body, [class*="st-"], [class*="css"] {
+        font-family: 'Cairo', sans-serif !important;
+        direction: rtl !important;
+        text-align: right !important;
     }
     
     .stApp {
-        background-color: #f1f5f9;
+        background: #f8fafc !important;
     }
-    
-    /* الهيدر العلوي */
-    .main-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+
+    /* 2. الهيدر الرئيسي فوق */
+    .custom-main-title {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         color: #ffffff;
-        padding: 30px 25px;
-        border-radius: 20px;
-        margin-bottom: 25px;
+        padding: 30px 20px;
+        border-radius: 18px;
         text-align: center !important;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
-        border: 1px solid #334155;
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+        margin-bottom: 30px;
     }
-    
-    .main-header h1 {
-        margin: 0 !important;
-        font-size: 30px !important;
+    .custom-main-title h1 {
+        font-size: 28px !important;
         font-weight: 800 !important;
-        color: #f8fafc !important;
+        color: #ffffff !important;
+        margin: 0 0 8px 0 !important;
         text-align: center !important;
     }
-    
-    .main-header p {
-        margin: 10px 0 0 0 !important;
+    .custom-main-title p {
         font-size: 15px !important;
         color: #94a3b8 !important;
+        margin: 0 !important;
         text-align: center !important;
     }
 
-    /* عناوين الأقسام */
-    .section-title {
-        text-align: center !important;
-        color: #0f172a;
-        font-weight: 800;
-        font-size: 22px;
-        margin-top: 20px;
-        margin-bottom: 25px;
-        padding-bottom: 10px;
-        border-bottom: 3px solid #cbd5e1;
-    }
-    
-    /* بطاقات الأرقام والمؤشرات (Metrics) */
-    div[data-testid="stMetric"] {
+    /* 3. عناوين الأقسام الراقية */
+    .section-card-header {
         background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 20px 15px;
-        text-align: center !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.04);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        color: #0f172a;
+        padding: 14px 20px;
+        border-radius: 12px;
+        font-size: 18px;
+        font-weight: 800;
+        margin: 20px 0 15px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        border-right: 5px solid #2563eb;
+        display: flex;
+        align-items: center;
     }
 
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    /* 4. اعادة تصميم حقول الإدخال والقوائم المنسدلة (Dropdowns & Inputs) */
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"] > div,
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        color: #0f172a !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
     }
     
+    /* عند التركيز على الحقل */
+    div[data-baseweb="select"]:focus-within,
+    div[data-baseweb="input"]:focus-within,
+    .stTextInput input:focus {
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+    }
+
+    /* 5. تجميل مربع رفع الملفات (File Uploader) */
+    div[data-testid="stFileUploader"] section {
+        background-color: #ffffff !important;
+        border: 2px dashed #cbd5e1 !important;
+        border-radius: 14px !important;
+        padding: 20px !important;
+    }
+    div[data-testid="stFileUploader"] section:hover {
+        border-color: #2563eb !important;
+        background-color: #f1f5f9 !important;
+    }
+
+    /* 6. إعادة تصميم بطاقات الأرقام (Metrics) */
+    div[data-testid="stMetric"] {
+        background: #ffffff !important;
+        border: none !important;
+        border-radius: 16px !important;
+        padding: 20px !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05) !important;
+        text-align: center !important;
+    }
     div[data-testid="stMetric"] label {
-        font-size: 15px !important;
+        font-size: 14px !important;
         font-weight: 700 !important;
         color: #64748b !important;
         justify-content: center !important;
+        margin-bottom: 8px !important;
     }
-
     div[data-testid="stMetricValue"] {
-        font-size: 24px !important;
+        font-size: 22px !important;
         font-weight: 800 !important;
-        color: #0f172a !important;
-        white-space: nowrap !important;
-        overflow: visible !important;
+        color: #1e293b !important;
         justify-content: center !important;
     }
-    
-    /* الأزرار */
+
+    /* 7. الأزرار */
     .stButton > button {
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 15px;
-        padding: 12px 24px;
-        width: 100%;
-        transition: all 0.2s ease;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+        font-size: 15px !important;
+        padding: 10px 20px !important;
+        border: none !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35) !important;
     }
 
-    /* الشريط الجانبي */
+    /* 8. القائمة الجانبية (Sidebar) */
     section[data-testid="stSidebar"] {
-        background-color: #0f172a;
+        background-color: #0f172a !important;
+        border-left: 1px solid #1e293b !important;
     }
     section[data-testid="stSidebar"] * {
-        color: #f8fafc !important;
+        color: #f1f5f9 !important;
+    }
+    div[data-testid="stSidebarUserContent"] {
+        padding-top: 20px !important;
     }
 
-    /* الجداول */
+    /* 9. الجدول */
     div[data-testid="stDataFrame"] {
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 10px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
-        border: 1px solid #e2e8f0;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        background: #ffffff !important;
     }
     </style>
 """,
@@ -236,10 +273,15 @@ st.markdown(
 # 3. القائمة الجانبية
 # ==========================================
 st.sidebar.markdown(
-    "<h2 style='text-align: center; margin-bottom: 20px; font-weight: 800;'>⚡ لوحة التحكم</h2>",
+    """
+    <div style="text-align: center; padding: 10px 0;">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: #fff;">⚡ لوحة التحكم</h2>
+        <p style="font-size: 12px; color: #94a3b8; margin-top: 4px;">إدارة التوريدات والداشبورد</p>
+    </div>
+    <hr style="border-color: #334155; margin: 15px 0;">
+""",
     unsafe_allow_html=True,
 )
-st.sidebar.markdown("---")
 
 menu = st.sidebar.radio(
     "الانتقال إلى الشاشة:",
@@ -257,8 +299,8 @@ menu = st.sidebar.radio(
 if menu == "📊 مطابقة الداشبورد اليومية":
     st.markdown(
         """
-    <div class="main-header">
-        <h1>📊 مطابقة عهدة الداشبورد مع التوريدات </h1>
+    <div class="custom-main-title">
+        <h1>📊 مطابقة عهدة الداشبورد مع التوريدات السحابية</h1>
         <p>متابعة مديونيات المناديب والصافي المستحق بلحظة بلحظة</p>
     </div>
     """,
@@ -311,7 +353,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             )
 
             save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
-            st.success("✅ تم استبدال وحفظ الداشبورد بنجاح!")
+            st.success("✅ تم استبدال وحفظ الداشبورد السحابي بنجاح!")
         except Exception as e:
             st.error(f"خطأ في قراءة الملف: {e}")
     else:
@@ -376,7 +418,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             merged["الحالة المالية"] = merged.apply(categorize, axis=1)
 
             st.markdown(
-                "<div class='section-title'>📈 ملخص موقف العهد والتوريدات</div>",
+                '<div class="section-card-header">📈 ملخص موقف العهد والتوريدات</div>',
                 unsafe_allow_html=True,
             )
             c1, c2, c3, c4 = st.columns(4)
@@ -395,7 +437,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 f"{merged[merged['الحالة المالية'] == '⚠️ مغادر وعليه مديونية'].shape[0]} مندوب",
             )
 
-            st.divider()
+            st.write("")
 
             display_cols = [id_col, name_col_dash]
             if status_col and status_col in merged.columns:
@@ -432,9 +474,9 @@ if menu == "📊 مطابقة الداشبورد اليومية":
 elif menu == "➕ إضافة / تسجيل توريد يومي":
     st.markdown(
         """
-    <div class="main-header">
-        <h1>➕ تسجيل توريد جديد للمندوب </h1>
-        <p>حفظ فوري في قاعدة البيانات لضمان عدم ضياع أي بيانات</p>
+    <div class="custom-main-title">
+        <h1>➕ تسجيل توريد جديد للمندوب (سحابي)</h1>
+        <p>حفظ فوري في قاعدة البيانات السحابية لضمان عدم ضياع أي بيانات</p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -444,7 +486,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 
     with col1:
         st.markdown(
-            "<div class='section-title'>1️⃣ تسجيل توريد فردي</div>",
+            '<div class="section-card-header">1️⃣ تسجيل توريد فردي</div>',
             unsafe_allow_html=True,
         )
         riders_data = get_riders()
@@ -467,9 +509,9 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
         notes = st.text_input("ملاحظات / رقم الإيصال:")
 
-        if st.button("💾 حفظ التوريد ", type="primary"):
+        if st.button("💾 حفظ التوريد في السحابة", type="primary"):
             if selected_rider_name and amount > 0:
-                with st.spinner("جاري إرسال الحفظ ..."):
+                with st.spinner("جاري إرسال الحفظ للسحابة..."):
                     auto_register_rider(selected_rider_code, selected_rider_name)
                     supabase.table("payments").insert({
                         "rider_code": str(selected_rider_code),
@@ -492,7 +534,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 
     with col2:
         st.markdown(
-            "<div class='section-title'>2️⃣ رفع شيت توريدات (جملة)</div>",
+            '<div class="section-card-header">2️⃣ رفع شيت توريدات (جملة)</div>',
             unsafe_allow_html=True,
         )
         batch_file = st.file_uploader(
@@ -502,7 +544,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         )
 
         if batch_file:
-            if st.button("📥 رفع وسحب البيانات", type="primary"):
+            if st.button("📥 رفع وسحب البيانات للسحابة", type="primary"):
                 try:
                     df_b = (
                         pd.read_csv(batch_file)
@@ -613,7 +655,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 
                         supabase.table("payments").insert(new_payments).execute()
                         st.toast(f"✅ تم رفع {len(new_payments)} حركة!", icon="🚀")
-                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح !")
+                        st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة!")
                     else:
                         st.warning("⚠️ لم يتم العثور على حركات توريد صالحة في الملف.")
 
@@ -626,8 +668,8 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 elif menu == "👥 إدارة أسماء المناديب":
     st.markdown(
         """
-    <div class="main-header">
-        <h1>👥 إدارة بيانات المناديب </h1>
+    <div class="custom-main-title">
+        <h1>👥 إدارة بيانات المناديب (سحابياً)</h1>
         <p>عرض وإضافة المناديب في قاعدة البيانات الدائمة</p>
     </div>
     """,
@@ -636,14 +678,14 @@ elif menu == "👥 إدارة أسماء المناديب":
 
     r_code = st.text_input("كود المندوب (ID):")
     r_name = st.text_input("اسم المندوب بالكامل:")
-    if st.button("إضافة المندوب ", type="primary"):
+    if st.button("إضافة المندوب للسحابة", type="primary"):
         if r_name:
             auto_register_rider(r_code, r_name)
             st.toast("✅ تم تسجيل المندوب بنجاح!", icon="👤")
             st.success("تمت إضافة المندوب بنجاح!")
             st.rerun()
 
-    st.divider()
+    st.write("")
     riders_list = get_riders()
     if riders_list:
         df_r_show = pd.DataFrame(riders_list)
@@ -660,9 +702,9 @@ elif menu == "👥 إدارة أسماء المناديب":
 elif menu == "📜 سجل التوريدات الشهرية":
     st.markdown(
         """
-    <div class="main-header">
+    <div class="custom-main-title">
         <h1>📜 سجل التوريدات وإدارتها</h1>
-        <p>حذف وإدارة التوريدات مع حماية البيانات عبر الأرشيف </p>
+        <p>حذف وإدارة التوريدات مع حماية البيانات عبر الأرشيف السحابي</p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -673,7 +715,10 @@ elif menu == "📜 سجل التوريدات الشهرية":
     col_del1, col_del2 = st.columns([2, 1])
 
     with col_del1:
-        st.subheader("🗑️ حذف توريد محدد ونقله للأرشيف")
+        st.markdown(
+            '<div class="section-card-header">🗑️ حذف توريد محدد ونقله للأرشيف</div>',
+            unsafe_allow_html=True,
+        )
         if payments_list:
             pay_options = {
                 f"ID: {p['id']} - {p['rider_name']} - {p['amount']} ج.م ({p['date']})": p
@@ -686,7 +731,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
                 selected_item = pay_options[selected_pay_str]
                 pay_id = selected_item["id"]
                 try:
-                    # 1. الأرشفة
                     supabase.table("deleted_payments").insert({
                         "original_id": pay_id,
                         "rider_code": selected_item.get("rider_code", ""),
@@ -697,7 +741,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
                         "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")),
                     }).execute()
 
-                    # 2. الحذف من جدول التوريدات
                     supabase.table("payments").delete().eq("id", pay_id).execute()
                     st.toast("🗑️ تم النقل للأرشيف", icon="✅")
                     st.success("✅ تم نقل التوريد إلى الأرشيف بنجاح!")
@@ -708,7 +751,10 @@ elif menu == "📜 سجل التوريدات الشهرية":
             st.info("لا توجد توريدات حالية للحذف.")
 
     with col_del2:
-        st.subheader("⚠️ مسح شامل")
+        st.markdown(
+            '<div class="section-card-header">⚠️ مسح شامل</div>',
+            unsafe_allow_html=True,
+        )
         st.write("حذف كافة التوريدات ونقلها للأرشيف:")
         if st.button("🔥 مسح كافة التوريدات", type="primary"):
             if payments_list:
@@ -735,9 +781,10 @@ elif menu == "📜 سجل التوريدات الشهرية":
                 except Exception as e:
                     st.error(f"خطأ أثناء المسح الشامل: {e}")
 
-    st.divider()
-
-    st.subheader("📋 التوريدات الحالية النشطة")
+    st.markdown(
+        '<div class="section-card-header">📋 التوريدات الحالية النشطة</div>',
+        unsafe_allow_html=True,
+    )
     if payments_list:
         df_p = pd.DataFrame(payments_list)
         cols = ["id", "rider_code", "rider_name", "date", "amount", "notes"]
@@ -756,14 +803,15 @@ elif menu == "📜 سجل التوريدات الشهرية":
         )
         st.dataframe(df_p_show, use_container_width=True, hide_index=True)
     else:
-        st.info("لا توجد توريدات مسجلة حتى الآن.")
-
-    st.divider()
+        st.info("لا توجد توريدات مسجلة بالسحابة حتى الآن.")
 
     # ==========================================
-    # قسم أرشيف المحذوفات (مع الاسترجاع والحذف النهائي)
+    # قسم أرشيف المحذوفات
     # ==========================================
-    st.subheader("🗑️ أرشيف المحذوفات (الاسترجاع أو الحذف النهائي)")
+    st.markdown(
+        '<div class="section-card-header">🗑️ أرشيف المحذوفات (الاسترجاع أو الحذف النهائي)</div>',
+        unsafe_allow_html=True,
+    )
     deleted_list = get_deleted_payments()
 
     if deleted_list:
