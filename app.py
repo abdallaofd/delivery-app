@@ -217,7 +217,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
     )
 
     dash_file = st.file_uploader(
-        "📥 ارفع ملف الداشبورد الحالي (CSV أو Excel)", type=["csv", "xlsx", "xls"]
+        "📥 ارفع ملف الداشبورد الجديد (CSV أو Excel)", type=["csv", "xlsx", "xls"]
     )
 
     df_dash_raw = None
@@ -228,73 +228,46 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 if dash_file.name.endswith(".csv")
                 else pd.read_excel(dash_file)
             )
+            dash_cols = df_dash_raw.columns.tolist()
+
+            id_col = next(
+                (c for c in dash_cols if "id" in str(c).lower() or "كود" in str(c).lower()),
+                dash_cols[0],
+            )
+            name_col_dash = next(
+                (c for c in dash_cols if "name" in str(c).lower() or "اسم" in str(c).lower()),
+                dash_cols[1] if len(dash_cols) > 1 else dash_cols[0],
+            )
+            cod_col = next(
+                (c for c in dash_cols if any(k in str(c).lower() for k in ["cod", "balance", "عهدة", "عجز", "مستحق", "amount"])),
+                dash_cols[-1],
+            )
+            status_col = next(
+                (c for c in dash_cols if "status" in str(c).lower() or "حالة" in str(c).lower()),
+                None,
+            )
+            vendor_col = next(
+                (c for c in dash_cols if "vendor" in str(c).lower() or "شركة" in str(c).lower()),
+                None,
+            )
+
+            # حفظ البيانات فور الرفع
+            save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
+            st.success("✅ تم حفظ الداشبورد السحابي بنجاح!")
         except Exception as e:
             st.error(f"خطأ في قراءة الملف: {e}")
     else:
         saved_dash = get_dashboard_data()
         if saved_dash:
             df_dash_raw = pd.DataFrame(saved_dash)
-            df_dash_raw.rename(
-                columns={
-                    "rider_code": "كود المندوب",
-                    "rider_name": "اسم المندوب",
-                    "amount": "عهدة الداشبورد",
-                    "status": "حالة المندوب",
-                },
-                inplace=True,
-            )
+            id_col = "rider_code"
+            name_col_dash = "rider_name"
+            cod_col = "amount"
+            status_col = "status"
+            vendor_col = None
 
     if df_dash_raw is not None and not df_dash_raw.empty:
         try:
-            dash_cols = df_dash_raw.columns.tolist()
-
-            id_col = next(
-                (
-                    c
-                    for c in dash_cols
-                    if "id" in str(c).lower() or "كود" in str(c).lower()
-                ),
-                dash_cols[0],
-            )
-            name_col_dash = next(
-                (
-                    c
-                    for c in dash_cols
-                    if "name" in str(c).lower() or "اسم" in str(c).lower()
-                ),
-                dash_cols[1] if len(dash_cols) > 1 else dash_cols[0],
-            )
-            cod_col = next(
-                (
-                    c
-                    for c in dash_cols
-                    if any(
-                        k in str(c).lower()
-                        for k in ["cod", "balance", "عهدة", "عجز", "مستحق", "amount"]
-                    )
-                ),
-                dash_cols[-1],
-            )
-            status_col = next(
-                (
-                    c
-                    for c in dash_cols
-                    if "status" in str(c).lower() or "حالة" in str(c).lower()
-                ),
-                None,
-            )
-            vendor_col = next(
-                (
-                    c
-                    for c in dash_cols
-                    if "vendor" in str(c).lower() or "شركة" in str(c).lower()
-                ),
-                None,
-            )
-
-            if dash_file:
-                save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
-
             df_dash = df_dash_raw.dropna(subset=[name_col_dash]).copy()
             df_dash["Name_Clean"] = df_dash[name_col_dash].apply(clean_text)
             df_dash["COD_Balance"] = pd.to_numeric(
@@ -329,7 +302,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 cod = row["COD_Balance"]
                 paid = row["Total_Paid"]
                 rem = row["Remaining_Balance"]
-                status = str(row[status_col]).lower() if status_col else ""
+                status = str(row[status_col]).lower() if status_col and status_col in row else ""
 
                 if status == "left" and rem > 0:
                     return "⚠️ مغادر وعليه مديونية"
@@ -367,9 +340,9 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             st.divider()
 
             display_cols = [id_col, name_col_dash]
-            if status_col:
+            if status_col and status_col in merged.columns:
                 display_cols.append(status_col)
-            if vendor_col:
+            if vendor_col and vendor_col in merged.columns:
                 display_cols.append(vendor_col)
             display_cols.extend(
                 ["COD_Balance", "Total_Paid", "Remaining_Balance", "الحالة المالية"]
@@ -393,7 +366,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 hide_index=True,
             )
         except Exception as e:
-            st.error(f"خطأ في معالجة الملف: {e}")
+            st.error(f"خطأ في معالجة البيانات: {e}")
 
 # ==========================================
 # الشاشة الثانية: تسجيل توريد يومي
@@ -564,7 +537,6 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 continue
 
                     if new_payments:
-                        # 1. تسجيل المناديب الجدد أولاً
                         existing_riders = get_riders()
                         existing_names = {r.get("name") for r in existing_riders}
                         riders_to_insert = [
@@ -575,7 +547,6 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                         if riders_to_insert:
                             supabase.table("riders").insert(riders_to_insert).execute()
 
-                        # 2. رفع التوريدات دفعة واحدة (Bulk Insert)
                         supabase.table("payments").insert(new_payments).execute()
                         st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة!")
                     else:
