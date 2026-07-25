@@ -35,6 +35,14 @@ def get_payments():
         return []
 
 
+def get_deleted_payments():
+    try:
+        res = supabase.table("deleted_payments").select("*").execute()
+        return res.data if res.data else []
+    except Exception:
+        return []
+
+
 def save_dashboard_data(df_dash, id_col, name_col, cod_col, status_col, vendor_col):
     try:
         supabase.table("dashboard_data").delete().neq("id", 0).execute()
@@ -50,6 +58,14 @@ def save_dashboard_data(df_dash, id_col, name_col, cod_col, status_col, vendor_c
             supabase.table("dashboard_data").insert(records).execute()
     except Exception:
         pass
+
+
+def delete_dashboard_data():
+    try:
+        supabase.table("dashboard_data").delete().neq("id", 0).execute()
+        return True
+    except Exception:
+        return False
 
 
 def get_dashboard_data():
@@ -216,9 +232,19 @@ if menu == "📊 مطابقة الداشبورد اليومية":
         unsafe_allow_html=True,
     )
 
-    dash_file = st.file_uploader(
-        "📥 ارفع ملف الداشبورد الجديد (CSV أو Excel)", type=["csv", "xlsx", "xls"]
-    )
+    col_up1, col_up2 = st.columns([3, 1])
+
+    with col_up1:
+        dash_file = st.file_uploader(
+            "📥 ارفع ملف الداشبورد الجديد (CSV أو Excel)", type=["csv", "xlsx", "xls"]
+        )
+
+    with col_up2:
+        st.write("🗑️ مسح الداشبورد الحالي:")
+        if st.button("🔥 مسح الشيت المحفوظ"):
+            if delete_dashboard_data():
+                st.success("✅ تم مسح شيت الداشبورد!")
+                st.rerun()
 
     df_dash_raw = None
     if dash_file:
@@ -251,9 +277,8 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 None,
             )
 
-            # حفظ البيانات فور الرفع
             save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
-            st.success("✅ تم حفظ الداشبورد السحابي بنجاح!")
+            st.success("✅ تم استبدال وحفظ الداشبورد السحابي بنجاح!")
         except Exception as e:
             st.error(f"خطأ في قراءة الملف: {e}")
     else:
@@ -369,7 +394,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             st.error(f"خطأ في معالجة البيانات: {e}")
 
 # ==========================================
-# الشاشة الثانية: تسجيل توريد يومي
+# الشاشة الثانية: تسجيل توريد يومي (مع حماية الزر وتنبيه الحفظ)
 # ==========================================
 elif menu == "➕ إضافة / تسجيل توريد يومي":
     st.markdown(
@@ -409,22 +434,31 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
         notes = st.text_input("ملاحظات / رقم الإيصال:")
 
+        # زر الحفظ مع حماية ضد الضغط المتكرر
         if st.button("💾 حفظ التوريد في السحابة", type="primary"):
             if selected_rider_name and amount > 0:
-                auto_register_rider(selected_rider_code, selected_rider_name)
-                supabase.table("payments").insert({
-                    "rider_code": str(selected_rider_code),
-                    "rider_name": selected_rider_name,
-                    "date": str(pay_date),
-                    "amount": float(amount),
-                    "notes": notes if notes else "تعديل/إدخال يدوي",
-                }).execute()
+                with st.spinner("جاري إرسال الحفظ للسحابة..."):
+                    auto_register_rider(selected_rider_code, selected_rider_name)
+                    supabase.table("payments").insert({
+                        "rider_code": str(selected_rider_code),
+                        "rider_name": selected_rider_name,
+                        "date": str(pay_date),
+                        "amount": float(amount),
+                        "notes": notes if notes else "تعديل/إدخال يدوي",
+                    }).execute()
+                
+                # أشعار انبثاقي سريع بالسطر الإيجابي
+                st.toast(f"✅ تم الحفظ: {amount} ج.م - {selected_rider_name}", icon="🎉")
+                
+                # banner تنبيهي ملفت ليتأكد الموظف
                 st.success(
-                    f"✅ تم حفظ توريد بمبلغ {amount} ج.م للمندوب ({selected_rider_name})"
-                    " في السحابة بنجاح!"
+                    f"🎉 **تم تسجيل التوريد بنجاح!**\n\n"
+                    f"👤 **المندوب:** {selected_rider_name}\n\n"
+                    f"💰 **المبلغ:** {amount:,.2f} ج.م\n\n"
+                    f"📅 **التاريخ:** {pay_date}"
                 )
             else:
-                st.error("يرجى التأكد من ادخال البيانات ومبلغ صحيح.")
+                st.error("⚠️ يرجى التأكد من اختيار المندوب وكتابة مبلغ أكبر من صفر.")
 
     with col2:
         st.markdown(
@@ -548,6 +582,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                             supabase.table("riders").insert(riders_to_insert).execute()
 
                         supabase.table("payments").insert(new_payments).execute()
+                        st.toast(f"✅ تم رفع {len(new_payments)} حركة!", icon="🚀")
                         st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة!")
                     else:
                         st.warning("⚠️ لم يتم العثور على حركات توريد صالحة في الملف.")
@@ -574,6 +609,7 @@ elif menu == "👥 إدارة أسماء المناديب":
     if st.button("إضافة المندوب للسحابة", type="primary"):
         if r_name:
             auto_register_rider(r_code, r_name)
+            st.toast("✅ تم تسجيل المندوب بنجاح!", icon="👤")
             st.success("تمت إضافة المندوب بنجاح!")
             st.rerun()
 
@@ -589,58 +625,99 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: سجل التوريدات المطور مع أدوات الحذف
+# الشاشة الرابعة: سجل التوريدات والأرشيف
 # ==========================================
 elif menu == "📜 سجل التوريدات الشهرية":
     st.markdown(
         """
     <div class="main-header">
         <h1>📜 سجل التوريدات وإدارتها</h1>
-        <p>إمكانية الحذف الفردي أو المسح الشامل لإعادة الرفع براحتك</p>
+        <p>حذف وإدارة التوريدات مع حماية البيانات عبر الأرشيف السحابي</p>
     </div>
     """,
         unsafe_allow_html=True,
     )
 
     payments_list = get_payments()
-    if payments_list:
-        df_p = pd.DataFrame(payments_list)
 
-        col_del1, col_del2 = st.columns([2, 1])
+    col_del1, col_del2 = st.columns([2, 1])
 
-        with col_del1:
-            st.subheader("🗑️ حذف توريد محدد")
+    with col_del1:
+        st.subheader("🗑️ حذف توريد محدد ونقله للأرشيف")
+        if payments_list:
             pay_options = {
-                f"ID: {p['id']} - {p['rider_name']} - {p['amount']} ج.م ({p['date']})": p[
-                    "id"
-                ]
+                f"ID: {p['id']} - {p['rider_name']} - {p['amount']} ج.م ({p['date']})": p
                 for p in payments_list
             }
-            selected_pay_to_del = st.selectbox(
+            selected_pay_str = st.selectbox(
                 "اختر التوريد المراد حسابه:", list(pay_options.keys())
             )
-            if st.button("❌ حذف التوريد المختار", type="secondary"):
-                pay_id = pay_options[selected_pay_to_del]
+            if st.button("❌ نقل إلى أرشيف المحذوفات", type="secondary"):
+                selected_item = pay_options[selected_pay_str]
+                pay_id = selected_item["id"]
                 try:
+                    # 1. الأرشفة
+                    supabase.table("deleted_payments").insert({
+                        "original_id": pay_id,
+                        "rider_code": selected_item.get("rider_code", ""),
+                        "rider_name": selected_item.get("rider_name", ""),
+                        "amount": selected_item.get("amount", 0.0),
+                        "date": str(selected_item.get("date", "")),
+                        "notes": selected_item.get("notes", ""),
+                        "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")),
+                    }).execute()
+
+                    # 2. الحذف من جدول التوريدات
                     supabase.table("payments").delete().eq("id", pay_id).execute()
-                    st.success("✅ تم حذف التوريد بنجاح!")
+                    st.toast("🗑️ تم النقل للأرشيف", icon="✅")
+                    st.success("✅ تم نقل التوريد إلى الأرشيف بنجاح!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"خطأ في الحذف: {e}")
+                    try:
+                        supabase.table("payments").delete().eq("id", pay_id).execute()
+                        st.success("✅ تم الحذف بنجاح!")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"خطأ في الحذف: {ex}")
+        else:
+            st.info("لا توجد توريدات حالية للحذف.")
 
-        with col_del2:
-            st.subheader("⚠️ مسح شامل")
-            st.write("حذف جميع التوريدات لإعادة الرفع:")
-            if st.button("🔥 مسح كافة التوريدات", type="primary"):
+    with col_del2:
+        st.subheader("⚠️ مسح شامل")
+        st.write("حذف كافة التوريدات ونقلها للأرشيف:")
+        if st.button("🔥 مسح كافة التوريدات", type="primary"):
+            if payments_list:
                 try:
+                    records_to_archive = []
+                    now_str = str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    for p in payments_list:
+                        records_to_archive.append({
+                            "original_id": p.get("id"),
+                            "rider_code": p.get("rider_code", ""),
+                            "rider_name": p.get("rider_name", ""),
+                            "amount": p.get("amount", 0.0),
+                            "date": str(p.get("date", "")),
+                            "notes": p.get("notes", ""),
+                            "deleted_at": now_str,
+                        })
+
+                    if records_to_archive:
+                        try:
+                            supabase.table("deleted_payments").insert(records_to_archive).execute()
+                        except Exception:
+                            pass
+
                     supabase.table("payments").delete().neq("id", 0).execute()
-                    st.success("✅ تم مسح جميع التوريدات بنجاح!")
+                    st.success("✅ تم مسح ونقل كافة التوريدات للأرشيف بنجاح!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"خطأ أثناء مسح البيانات: {e}")
+                    st.error(f"خطأ أثناء المسح الشامل: {e}")
 
-        st.divider()
+    st.divider()
 
+    st.subheader("📋 التوريدات الحالية النشطة")
+    if payments_list:
+        df_p = pd.DataFrame(payments_list)
         cols = ["id", "rider_code", "rider_name", "date", "amount", "notes"]
         available_cols = [c for c in cols if c in df_p.columns]
         df_p_show = df_p[available_cols].copy()
@@ -658,3 +735,71 @@ elif menu == "📜 سجل التوريدات الشهرية":
         st.dataframe(df_p_show, use_container_width=True, hide_index=True)
     else:
         st.info("لا توجد توريدات مسجلة بالسحابة حتى الآن.")
+
+    st.divider()
+
+    # ==========================================
+    # قسم أرشيف المحذوفات والاسترجاع
+    # ==========================================
+    st.subheader("🗑️ أرشيف المحذوفات مع ميزة الاسترجاع")
+    deleted_list = get_deleted_payments()
+
+    if deleted_list:
+        del_options = {
+            f"اسم المندوب: {d.get('rider_name')} | المبلغ: {d.get('amount')} ج.م | تاريخ الحذف: {d.get('deleted_at', '')}": d
+            for d in deleted_list
+        }
+
+        col_res1, col_res2 = st.columns([3, 1])
+        with col_res1:
+            selected_del_str = st.selectbox(
+                "اختر التوريد المحذوف الذي ترغب في استرجاعه:",
+                list(del_options.keys()),
+            )
+        with col_res2:
+            st.write("")
+            st.write("")
+            if st.button("↩️ استرجاع التوريد المختار", type="primary"):
+                item_to_restore = del_options[selected_del_str]
+                del_id = item_to_restore.get("id")
+                try:
+                    supabase.table("payments").insert({
+                        "rider_code": item_to_restore.get("rider_code", ""),
+                        "rider_name": item_to_restore.get("rider_name", ""),
+                        "date": str(item_to_restore.get("date", "")),
+                        "amount": float(item_to_restore.get("amount", 0.0)),
+                        "notes": f"مسترجع من المحذوفات: {item_to_restore.get('notes', '')}",
+                    }).execute()
+
+                    supabase.table("deleted_payments").delete().eq("id", del_id).execute()
+                    st.toast("↩️ تم الاسترجاع بنجاح!", icon="🎉")
+                    st.success("✅ تم استرجاع التوريد وإعادته إلى التوريدات النشطة بنجاح!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ أثناء استرجاع البيانات: {e}")
+
+        df_del = pd.DataFrame(deleted_list)
+        cols_del = [
+            "rider_code",
+            "rider_name",
+            "date",
+            "amount",
+            "notes",
+            "deleted_at",
+        ]
+        available_cols_del = [c for c in cols_del if c in df_del.columns]
+        df_del_show = df_del[available_cols_del].copy()
+        df_del_show.rename(
+            columns={
+                "rider_code": "كود المندوب",
+                "rider_name": "اسم المندوب",
+                "date": "تاريخ التوريد الأصلي",
+                "amount": "المبلغ",
+                "notes": "ملاحظات",
+                "deleted_at": "توقيت الحذف",
+            },
+            inplace=True,
+        )
+        st.dataframe(df_del_show, use_container_width=True, hide_index=True)
+    else:
+        st.info("سجل المحذوفات فارغ، لم يتم حذف أي حركات مؤخراً.")
