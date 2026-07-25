@@ -589,14 +589,14 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: سجل التوريدات
+# الشاشة الرابعة: سجل التوريدات المطور مع أدوات الحذف
 # ==========================================
 elif menu == "📜 سجل التوريدات الشهرية":
     st.markdown(
         """
     <div class="main-header">
-        <h1>📜 جميع التوريدات المسجلة في السحابة</h1>
-        <p>بيانات مباشرة ومحفوظة للبدء والرجوع إليها في أي وقت</p>
+        <h1>📜 سجل التوريدات وإدارتها</h1>
+        <p>إمكانية الحذف الفردي أو المسح الشامل لإعادة الرفع براحتك</p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -605,9 +605,56 @@ elif menu == "📜 سجل التوريدات الشهرية":
     payments_list = get_payments()
     if payments_list:
         df_p = pd.DataFrame(payments_list)
-        cols = ["rider_code", "rider_name", "date", "amount", "notes"]
+
+        col_del1, col_del2 = st.columns([2, 1])
+
+        with col_del1:
+            st.subheader("🗑️ حذف توريد محدد")
+            pay_options = {
+                f"ID: {p['id']} - {p['rider_name']} - {p['amount']} ج.م ({p['date']})": p[
+                    "id"
+                ]
+                for p in payments_list
+            }
+            selected_pay_to_del = st.selectbox(
+                "اختر التوريد المراد حسابه:", list(pay_options.keys())
+            )
+            if st.button("❌ حذف التوريد المختار", type="secondary"):
+                pay_id = pay_options[selected_pay_to_del]
+                try:
+                    supabase.table("payments").delete().eq("id", pay_id).execute()
+                    st.success("✅ تم حذف التوريد بنجاح!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ في الحذف: {e}")
+
+        with col_del2:
+            st.subheader("⚠️ مسح شامل")
+            st.write("حذف جميع التوريدات لإعادة الرفع:")
+            if st.button("🔥 مسح كافة التوريدات", type="primary"):
+                try:
+                    supabase.table("payments").delete().neq("id", 0).execute()
+                    st.success("✅ تم مسح جميع التوريدات بنجاح!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ أثناء مسح البيانات: {e}")
+
+        st.divider()
+
+        cols = ["id", "rider_code", "rider_name", "date", "amount", "notes"]
         available_cols = [c for c in cols if c in df_p.columns]
-        df_p = df_p[available_cols]
-        st.dataframe(df_p, use_container_width=True, hide_index=True)
+        df_p_show = df_p[available_cols].copy()
+        df_p_show.rename(
+            columns={
+                "id": "رقم الحركة",
+                "rider_code": "كود المندوب",
+                "rider_name": "اسم المندوب",
+                "date": "التاريخ",
+                "amount": "المبلغ",
+                "notes": "ملاحظات",
+            },
+            inplace=True,
+        )
+        st.dataframe(df_p_show, use_container_width=True, hide_index=True)
     else:
         st.info("لا توجد توريدات مسجلة بالسحابة حتى الآن.")
