@@ -76,6 +76,42 @@ def get_dashboard_data():
         return []
 
 
+# ---- دوال جديدة للحفظ والسحب السحابي لشيت المرتبات ----
+def save_salaries_data(df_sal_grouped):
+    try:
+        supabase.table("salaries_data").delete().neq("id", 0).execute()
+        records = []
+        for _, r in df_sal_grouped.iterrows():
+            rec = {
+                "rider_code": str(r["Code_Clean"]),
+                "rider_name": str(r["Name_Clean"]),
+                "amount": float(r["Salary_Clean"]),
+            }
+            if "Month_Year" in r:
+                rec["month_year"] = str(r["Month_Year"])
+            records.append(rec)
+        if records:
+            supabase.table("salaries_data").insert(records).execute()
+    except Exception:
+        pass
+
+
+def delete_salaries_data():
+    try:
+        supabase.table("salaries_data").delete().neq("id", 0).execute()
+        return True
+    except Exception:
+        return False
+
+
+def get_salaries_data():
+    try:
+        res = supabase.table("salaries_data").select("*").execute()
+        return res.data if res.data else []
+    except Exception:
+        return []
+
+
 def auto_register_rider(code, name):
     if not name or str(name).strip() == "":
         return
@@ -819,23 +855,36 @@ elif menu == "📜 سجل التوريدات الشهرية":
         st.info("سجل المحذوفات فارغ، لم يتم حذف أي حركات مؤخراً.")
 
 # ==========================================
-# الشاشة الخامسة (الجديدة): تجميع مرتبات المناديب
+# الشاشة الخامسة: تجميع مرتبات المناديب
 # ==========================================
 elif menu == "💰 تجميع مرتبات المناديب":
     st.markdown(
         """
     <div class="main-header">
         <h1>💰 تجميع مرتبات المناديب وحساب الاستحقاقات</h1>
-        <p>تجميع المرتبات بالأيام مع إمكانية تقسيم المرتب لكل شهر بشكل منفصل أوتوماتيكياً</p>
+        <p>تجميع المرتبات بالسحابة مع إمكانية الفلترة وتحديد شهر منفصل بسهولة</p>
     </div>
     """,
         unsafe_allow_html=True,
     )
 
-    sal_file = st.file_uploader(
-        "📥 ارفع شيت مرتبات المناديب (Excel أو CSV):", type=["xlsx", "xls", "csv"], key="salary_file"
-    )
+    col_s1, col_s2 = st.columns([3, 1])
 
+    with col_s1:
+        sal_file = st.file_uploader(
+            "📥 ارفع شيت مرتبات جديد (Excel أو CSV):", type=["xlsx", "xls", "csv"], key="salary_file"
+        )
+
+    with col_s2:
+        st.write("🗑️ مسح شيت المرتبات المحفوظ:")
+        if st.button("🔥 مسح المرتبات المحفوظة"):
+            if delete_salaries_data():
+                st.success("✅ تم مسح المرتبات المحفوظة!")
+                st.rerun()
+
+    grouped_data = None
+
+    # حالة رفع شيت جديد
     if sal_file:
         try:
             df_sal = (
@@ -844,10 +893,8 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 else pd.read_excel(sal_file)
             )
 
-            st.success("✅ تم تحميل الملف بنجاح!")
             cols = df_sal.columns.tolist()
 
-            # التناغم التلقائي مع أسماء الأعمدة
             code_c = next(
                 (c for c in cols if any(k in str(c).lower() for k in ["كود", "id", "code"])),
                 cols[0],
@@ -879,7 +926,6 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 default_date_idx = (cols.index(date_c) + 1) if date_c and date_c in cols else 0
                 selected_date_col = st.selectbox("عمود التاريخ / الشهر (للتقسيم):", date_options, index=default_date_idx)
 
-            # معالجة وتحويل القيم الرقمية للمرتب
             df_sal["Salary_Clean"] = pd.to_numeric(
                 df_sal[selected_sal_col].astype(str).str.replace(",", "").str.strip(), errors="coerce"
             ).fillna(0)
@@ -887,79 +933,99 @@ elif menu == "💰 تجميع مرتبات المناديب":
             df_sal["Code_Clean"] = df_sal[selected_code_col].astype(str).str.strip()
             df_sal["Name_Clean"] = df_sal[selected_name_col].astype(str).str.strip()
 
-            # قسم معالجة التاريخ وتقسيم الشهور
             if selected_date_col != "بدون تحديد / شهر واحد":
                 df_sal["Parsed_Date"] = pd.to_datetime(df_sal[selected_date_col], errors="coerce")
-                # إنشاء عمود Month_Year بالصيغة YYYY-MM
-                df_sal["Month_Year"] = df_sal["Parsed_Date"].dt.strftime("%Y-%m")
-                df_sal["Month_Year"] = df_sal["Month_Year"].fillna("غير محدد")
-                
+                df_sal["Month_Year"] = df_sal["Parsed_Date"].dt.strftime("%Y-%m").fillna("غير محدد")
                 group_cols = ["Month_Year", "Code_Clean", "Name_Clean"]
             else:
                 group_cols = ["Code_Clean", "Name_Clean"]
 
-            # التجميع لحساب إجمالي المرتب
-            grouped = df_sal.groupby(group_cols, as_index=False)["Salary_Clean"].sum()
+            grouped_data = df_sal.groupby(group_cols, as_index=False)["Salary_Clean"].sum()
 
-            st.divider()
-
-            if selected_date_col != "بدون تحديد / شهر واحد":
-                st.markdown("<div class='section-title'>📊 إجمالي مرتبات المناديب مقسمة بكل شهر</div>", unsafe_allow_html=True)
-                
-                months = sorted(grouped["Month_Year"].unique())
-                
-                # ملخصات وإحصائيات سريعة لكافة الأشهر
-                m_cols = st.columns(min(len(months), 4))
-                for idx, m in enumerate(months):
-                    m_total = grouped[grouped["Month_Year"] == m]["Salary_Clean"].sum()
-                    with m_cols[idx % 4]:
-                        st.metric(f"إجمالي مرتبات شهر {m}", f"{m_total:,.2f} ج.م")
-
-                st.write("")
-
-                # عرض جدول التجميع
-                final_sal_table = grouped.rename(
-                    columns={
-                        "Month_Year": "الشهر / السنة",
-                        "Code_Clean": "كود المندوب",
-                        "Name_Clean": "اسم المندوب",
-                        "Salary_Clean": "إجمالي المرتب المستحق",
-                    }
-                )
-
-                # الترتيب حسب الشهر ثم الاسم
-                final_sal_table = final_sal_table.sort_values(by=["الشهر / السنة", "اسم المندوب"])
-                st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
-
-            else:
-                st.markdown("<div class='section-title'>📊 إجمالي مرتبات المناديب التجميعية</div>", unsafe_allow_html=True)
-                
-                st.metric("إجمالي المرتبات للكل", f"{grouped['Salary_Clean'].sum():,.2f} ج.م")
-                
-                final_sal_table = grouped.rename(
-                    columns={
-                        "Code_Clean": "كود المندوب",
-                        "Name_Clean": "اسم المندوب",
-                        "Salary_Clean": "إجمالي المرتب المستحق",
-                    }
-                )
-                final_sal_table = final_sal_table.sort_values(by="إجمالي المرتب المستحق", ascending=False)
-                st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
-
-            # زر تحميل نتائج التجميع كملف إكسيل جاهز
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                final_sal_table.to_excel(writer, index=False, sheet_name="مرتبات المناديب")
-
-            st.download_button(
-                label="📥 تحميل شيت المرتبات المجمعة (Excel)",
-                data=buffer.getvalue(),
-                file_name="Total_Salaries_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-            )
+            # حفظ البيانات سحابياً
+            save_salaries_data(grouped_data)
+            st.success("✅ تم معالجة وحفظ شيت المرتبات في السحابة بنجاح!")
 
         except Exception as e:
             st.error(f"❌ حدث خطأ أثناء معالجة شيت المرتبات: {e}")
+
+    # حالة الاسترجاع من السحابة إذا لم يتم رفع ملف جديد
     else:
-        st.info("💡 قم برفع شيت مرتبات المناديب باليوم للبدء في تجميع الاستحقاقات والتقسيم أوتوماتيكياً.")
+        saved_salaries = get_salaries_data()
+        if saved_salaries:
+            grouped_data = pd.DataFrame(saved_salaries)
+            grouped_data.rename(
+                columns={
+                    "rider_code": "Code_Clean",
+                    "rider_name": "Name_Clean",
+                    "amount": "Salary_Clean",
+                    "month_year": "Month_Year",
+                },
+                inplace=True,
+            )
+
+    # عرض وجدولة المرتبات والفلترة بالشهور
+    if grouped_data is not None and not grouped_data.empty:
+        st.divider()
+
+        # إذا كان العمود الخاص بالشهر موجوداً
+        if "Month_Year" in grouped_data.columns and grouped_data["Month_Year"].notna().any():
+            available_months = sorted(grouped_data["Month_Year"].dropna().unique().tolist())
+
+            col_flt1, col_flt2 = st.columns([1, 2])
+            with col_flt1:
+                selected_month_filter = st.selectbox(
+                    "📅 اختر الشهر لإظهاره منفصلاً:",
+                    ["عرض كافة الأشهر"] + available_months,
+                )
+
+            # تطبيق الفلتر
+            if selected_month_filter != "عرض كافة الأشهر":
+                df_display = grouped_data[grouped_data["Month_Year"] == selected_month_filter].copy()
+                st.markdown(f"<div class='section-title'>📊 إجمالي مرتبات شهر ({selected_month_filter})</div>", unsafe_allow_html=True)
+            else:
+                df_display = grouped_data.copy()
+                st.markdown("<div class='section-title'>📊 إجمالي كافة الأشهر المسجلة</div>", unsafe_allow_html=True)
+
+            # إحصائيات سريعة
+            st.metric("إجمالي المرتبات لهذا العرض", f"{df_display['Salary_Clean'].sum():,.2f} ج.م")
+
+            final_sal_table = df_display.rename(
+                columns={
+                    "Month_Year": "الشهر / السنة",
+                    "Code_Clean": "كود المندوب",
+                    "Name_Clean": "اسم المندوب",
+                    "Salary_Clean": "إجمالي المرتب المستحق",
+                }
+            )
+            final_sal_table = final_sal_table.sort_values(by="اسم المندوب")
+            st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
+
+        else:
+            st.markdown("<div class='section-title'>📊 إجمالي المرتبات المحفوظة</div>", unsafe_allow_html=True)
+            st.metric("إجمالي المرتبات للكل", f"{grouped_data['Salary_Clean'].sum():,.2f} ج.م")
+
+            final_sal_table = grouped_data.rename(
+                columns={
+                    "Code_Clean": "كود المندوب",
+                    "Name_Clean": "اسم المندوب",
+                    "Salary_Clean": "إجمالي المرتب المستحق",
+                }
+            )
+            final_sal_table = final_sal_table.sort_values(by="إجمالي المرتب المستحق", ascending=False)
+            st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
+
+        # تحميل النتائج المفلترة كملف Excel
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            final_sal_table.to_excel(writer, index=False, sheet_name="تقرير المرتبات")
+
+        st.download_button(
+            label="📥 تحميل التقرير المعروض (Excel)",
+            data=buffer.getvalue(),
+            file_name="Salaries_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    else:
+        st.info("💡 لا يوجد شيت مرتبات محفوظ حالياً. قم برفع شيت مرتبات جديد للبدء.")
