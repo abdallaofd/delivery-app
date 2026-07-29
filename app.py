@@ -411,14 +411,14 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             )
             c1, c2, c3, c4 = st.columns(4)
             c1.metric(
-                "إجمالي عهدة الداشبورد", f"{merged['COD_Balance'].sum():,.2f} ج.م"
+                "إجمالي عهدة الداشبورد", f"{int(merged['COD_Balance'].sum()):,} ج.م"
             )
             c2.metric(
-                "إجمالي التوريدات المسجلة", f"{merged['Total_Paid'].sum():,.2f} ج.م"
+                "إجمالي التوريدات المسجلة", f"{int(merged['Total_Paid'].sum()):,} ج.م"
             )
             c3.metric(
                 "الصافي المطلوب تحصيله",
-                f"{merged['Remaining_Balance'].sum():,.2f} ج.م",
+                f"{int(merged['Remaining_Balance'].sum()):,} ج.م",
             )
             c4.metric(
                 "مناديب مغادرين بمديونية",
@@ -494,7 +494,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
             selected_rider_code = rider_options[choice].get("code", "")
 
         pay_date = st.date_input("تاريخ التوريد:")
-        amount = st.number_input("المبلغ المورد (ج.م):", min_value=0.0, step=50.0)
+        amount = st.number_input("المبلغ المورد (ج.م):", min_value=0, step=50)
         notes = st.text_input("ملاحظات / رقم الإيصال:")
 
         if st.button("💾 حفظ التوريد في السحابة", type="primary"):
@@ -514,7 +514,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                 st.success(
                     f"🎉 **تم تسجيل التوريد بنجاح!**\n\n"
                     f"👤 **المندوب:** {selected_rider_name}\n\n"
-                    f"💰 **المبلغ:** {amount:,.2f} ج.م\n\n"
+                    f"💰 **المبلغ:** {int(amount):,} ج.م\n\n"
                     f"📅 **التاريخ:** {pay_date}"
                 )
             else:
@@ -651,29 +651,70 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                     st.error(f"خطأ أثناء معالجة الملف: {e}")
 
 # ==========================================
-# الشاشة الثالثة: إدارة أسماء المناديب
+# الشاشة الثالثة: إدارة أسماء المناديب (مع ميزة حذف وأرشفة المندوب)
 # ==========================================
 elif menu == "👥 إدارة أسماء المناديب":
     st.markdown(
         """
     <div class="main-header">
         <h1>👥 إدارة بيانات المناديب (سحابياً)</h1>
-        <p>عرض وإضافة المناديب في قاعدة البيانات الدائمة</p>
+        <p>عرض، إضافة، وحذف المناديب مع وجود أرشيف كامل للمحذوفات</p>
     </div>
     """,
         unsafe_allow_html=True,
     )
 
-    r_code = st.text_input("كود المندوب (ID):")
-    r_name = st.text_input("اسم المندوب بالكامل:")
-    if st.button("إضافة المندوب للسحابة", type="primary"):
-        if r_name:
-            auto_register_rider(r_code, r_name)
-            st.toast("✅ تم تسجيل المندوب بنجاح!", icon="👤")
-            st.success("تمت إضافة المندوب بنجاح!")
-            st.rerun()
+    col_r1, col_r2 = st.columns(2)
+
+    with col_r1:
+        st.markdown("<div class='section-title'>➕ إضافة مندوب جديد</div>", unsafe_allow_html=True)
+        r_code = st.text_input("كود المندوب (ID):")
+        r_name = st.text_input("اسم المندوب بالكامل:")
+        if st.button("إضافة المندوب للسحابة", type="primary"):
+            if r_name:
+                auto_register_rider(r_code, r_name)
+                st.toast("✅ تم تسجيل المندوب بنجاح!", icon="👤")
+                st.success("تمت إضافة المندوب بنجاح!")
+                st.rerun()
+            else:
+                st.error("يرجى إدخال اسم المندوب على الأقل.")
+
+    with col_r2:
+        st.markdown("<div class='section-title'>🗑️ حذف مندوب وأرشفته</div>", unsafe_allow_html=True)
+        riders_list = get_riders()
+        if riders_list:
+            r_options = {f"{r.get('code', '')} - {r['name']}": r for r in riders_list}
+            selected_r_del = st.selectbox("اختر المندوب المراد حسفه:", list(r_options.keys()))
+            
+            if st.button("❌ نقل المندوب للأرشيف وحذفه", type="secondary"):
+                r_item = r_options[selected_r_del]
+                try:
+                    # 1. نقل إلى أرشيف المناديب المحذوفين
+                    supabase.table("deleted_riders").insert({
+                        "original_id": r_item.get("id"),
+                        "code": r_item.get("code", ""),
+                        "name": r_item.get("name", ""),
+                        "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    }).execute()
+
+                    # 2. الحذف من جدول المناديب النشط
+                    supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
+                    st.toast("✅ تم حذف المندوب وأرشفته بنجاح!", icon="🗑️")
+                    st.success(f"تم حذف المندوب ({r_item.get('name')}) ونقله للأرشيف.")
+                    st.rerun()
+                except Exception as e:
+                    # في حال عدم وجود جدول deleted_riders، يتم الحذف المباشر
+                    try:
+                        supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
+                        st.success(f"تم حذف المندوب ({r_item.get('name')}) بنجاح.")
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"خطأ أثناء حذف المندوب: {ex}")
+        else:
+            st.info("لا يوجد مناديب مسجلين للحذف.")
 
     st.divider()
+    st.subheader("📋 قائمة أسماء المناديب المعتمدة")
     riders_list = get_riders()
     if riders_list:
         df_r_show = pd.DataFrame(riders_list)
@@ -681,11 +722,20 @@ elif menu == "👥 إدارة أسماء المناديب":
             df_r_show = df_r_show[["code", "name"]]
             df_r_show.columns = ["كود المندوب", "اسم المندوب"]
             st.dataframe(df_r_show, use_container_width=True, hide_index=True)
+
+            # زر تحميل قائمة المناديب Excel / CSV
+            csv_r = df_r_show.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 تحميل قائمة المناديب (Excel / CSV)",
+                data=csv_r,
+                file_name="riders_list.csv",
+                mime="text/csv"
+            )
     else:
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابع: بيانات الموظفين والمناديب (employees_data)
+# الشاشة الرابعة: بيانات الموظفين والمناديب (مع الرقم القومي وزر التحميل)
 # ==========================================
 elif menu == "📝 بيانات الموظفين والمناديب":
     st.markdown(
@@ -707,7 +757,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         with c1:
             e_user_code = st.text_input("🆔 كود المندوب / المستخدم (user_code):")
             e_name_ar = st.text_input("👤 الاسم بالعربي (name_ar):")
-            e_name_en = st.text_input("🔤 الاسم بالإنجليزي (name_en):")
+            e_national_id = st.text_input("🪪 رقم البطاقة / الرقم القومي (national_id):")
             e_branch = st.text_input("🏢 الفرع (branch_name):")
 
         with c2:
@@ -719,28 +769,31 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         with c3:
             e_transfer_num = st.text_input("💳 رقم التحويل (transfer_number):")
             e_transfer_type = st.selectbox("🔄 نوع التحويل (transfer_type):", ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"])
-            e_notes = st.text_area("📝 ملاحظات (notes):", height=100)
+            e_notes = st.text_area("📝 ملاحظات (notes):", height=108)
 
         if st.button("💾 حفظ البيانات الفردية في السحابة", type="primary"):
-            emp_record = {
-                "user_code": e_user_code,
-                "name_ar": e_name_ar,
-                "name_en": e_name_en,
-                "work_mobile": e_work_mobile,
-                "personal_mobile": e_personal_mobile,
-                "emergency_mobile_1": e_emergency_1,
-                "emergency_mobile_2": e_emergency_2,
-                "transfer_number": e_transfer_num,
-                "transfer_type": e_transfer_type,
-                "branch_name": e_branch,
-                "notes": e_notes
-            }
-            if save_employee_data(emp_record):
-                st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
-                st.success("✅ تم حفظ بيانات الموظف في جدول employees_data السحابي!")
-                st.rerun()
+            if not e_user_code or not e_name_ar:
+                st.error("❌ يرجى إدخال كود المندوب والاسم بالعربي على الأقل.")
             else:
-                st.error("❌ حدث خطأ أثناء الحفظ. تأكد من إعدادات الجدول في Supabase.")
+                emp_record = {
+                    "user_code": e_user_code.strip(),
+                    "name_ar": e_name_ar.strip(),
+                    "national_id": e_national_id.strip(),
+                    "work_mobile": e_work_mobile.strip(),
+                    "personal_mobile": e_personal_mobile.strip(),
+                    "emergency_mobile_1": e_emergency_1.strip(),
+                    "emergency_mobile_2": e_emergency_2.strip(),
+                    "transfer_number": e_transfer_num.strip(),
+                    "transfer_type": e_transfer_type,
+                    "branch_name": e_branch.strip(),
+                    "notes": e_notes.strip()
+                }
+                if save_employee_data(emp_record):
+                    st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
+                    st.success("✅ تم حفظ بيانات الموظف في جدول employees_data السحابي!")
+                    st.rerun()
+                else:
+                    st.error("❌ حدث خطأ أثناء الحفظ. تأكد من إعدادات الجدول في Supabase.")
 
     with tab2:
         st.markdown("<div class='section-title'>📂 رفع واستيراد شيت كامل لبيانات الموظفين</div>", unsafe_allow_html=True)
@@ -749,55 +802,58 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         if emp_file:
             try:
                 df_e = pd.read_csv(emp_file) if emp_file.name.endswith(".csv") else pd.read_excel(emp_file)
-                cols_e = df_e.columns.tolist()
+                df_e.columns = [str(col).strip() for col in df_e.columns]
+                cols_e = ["-- غير محدد --"] + list(df_e.columns)
 
-                st.write("🔍 **ربط أعمدة الشيت مع قواعد البيانات:**")
-                m1, m2, m3, m4 = st.columns(4)
+                st.write("🔍 **ربط أعمدة الشيت مع حقول النظام:**")
+                m1, m2, m3 = st.columns(3)
                 
                 with m1:
-                    uc_col = st.selectbox("كود المندوب/المستخدم:", ["غير محدد"] + cols_e)
-                    ar_col = st.selectbox("الاسم بالعربي:", ["غير محدد"] + cols_e)
-                    en_col = st.selectbox("الاسم بالإنجليزي:", ["غير محدد"] + cols_e)
+                    uc_col = st.selectbox("كود المندوب/المستخدم *", cols_e, index=1 if len(cols_e)>1 else 0)
+                    ar_col = st.selectbox("الاسم بالعربي *", cols_e, index=2 if len(cols_e)>2 else 0)
+                    nat_col = st.selectbox("رقم البطاقة/القومي", cols_e)
+                    br_col = st.selectbox("الفرع", cols_e)
 
                 with m2:
-                    wm_col = st.selectbox("موبايل العمل:", ["غير محدد"] + cols_e)
-                    pm_col = st.selectbox("الموبايل الشخصي:", ["غير محدد"] + cols_e)
-                    em1_col = st.selectbox("طوارئ 1:", ["غير محدد"] + cols_e)
+                    wm_col = st.selectbox("موبايل العمل", cols_e)
+                    pm_col = st.selectbox("الموبايل الشخصي", cols_e)
+                    em1_col = st.selectbox("طوارئ 1", cols_e)
+                    em2_col = st.selectbox("طوارئ 2", cols_e)
 
                 with m3:
-                    em2_col = st.selectbox("طوارئ 2:", ["غير محدد"] + cols_e)
-                    tn_col = st.selectbox("رقم التحويل:", ["غير محدد"] + cols_e)
-                    tt_col = st.selectbox("نوع التحويل:", ["غير محدد"] + cols_e)
-
-                with m4:
-                    br_col = st.selectbox("الفرع:", ["غير محدد"] + cols_e)
-                    nt_col = st.selectbox("ملاحظات:", ["غير محدد"] + cols_e)
+                    tn_col = st.selectbox("رقم التحويل", cols_e)
+                    tt_col = st.selectbox("نوع التحويل", cols_e)
+                    nt_col = st.selectbox("ملاحظات", cols_e)
 
                 if st.button("🚀 رفع الشيت بالكامل إلى السحابة", type="primary"):
-                    batch_records = []
-                    for _, row in df_e.iterrows():
-                        record = {
-                            "user_code": str(row[uc_col]) if uc_col != "غير محدد" and pd.notna(row[uc_col]) else "",
-                            "name_ar": str(row[ar_col]) if ar_col != "غير محدد" and pd.notna(row[ar_col]) else "",
-                            "name_en": str(row[en_col]) if en_col != "غير محدد" and pd.notna(row[en_col]) else "",
-                            "work_mobile": str(row[wm_col]) if wm_col != "غير محدد" and pd.notna(row[wm_col]) else "",
-                            "personal_mobile": str(row[pm_col]) if pm_col != "غير محدد" and pd.notna(row[pm_col]) else "",
-                            "emergency_mobile_1": str(row[em1_col]) if em1_col != "غير محدد" and pd.notna(row[em1_col]) else "",
-                            "emergency_mobile_2": str(row[em2_col]) if em2_col != "غير محدد" and pd.notna(row[em2_col]) else "",
-                            "transfer_number": str(row[tn_col]) if tn_col != "غير محدد" and pd.notna(row[tn_col]) else "",
-                            "transfer_type": str(row[tt_col]) if tt_col != "غير محدد" and pd.notna(row[tt_col]) else "",
-                            "branch_name": str(row[br_col]) if br_col != "غير محدد" and pd.notna(row[br_col]) else "",
-                            "notes": str(row[nt_col]) if nt_col != "غير محدد" and pd.notna(row[nt_col]) else "",
-                        }
-                        batch_records.append(record)
+                    if uc_col == "-- غير محدد --" or ar_col == "-- غير محدد --":
+                        st.error("❌ يجب تحديد كود المندوب والاسم بالعربي على الأقل.")
+                    else:
+                        batch_records = []
+                        for _, row in df_e.iterrows():
+                            record = {
+                                "user_code": str(row[uc_col]).strip() if uc_col != "-- غير محدد --" and pd.notna(row[uc_col]) else "",
+                                "name_ar": str(row[ar_col]).strip() if ar_col != "-- غير محدد --" and pd.notna(row[ar_col]) else "",
+                                "national_id": str(row[nat_col]).strip() if nat_col != "-- غير محدد --" and pd.notna(row[nat_col]) else "",
+                                "work_mobile": str(row[wm_col]).strip() if wm_col != "-- غير محدد --" and pd.notna(row[wm_col]) else "",
+                                "personal_mobile": str(row[pm_col]).strip() if pm_col != "-- غير محدد --" and pd.notna(row[pm_col]) else "",
+                                "emergency_mobile_1": str(row[em1_col]).strip() if em1_col != "-- غير محدد --" and pd.notna(row[em1_col]) else "",
+                                "emergency_mobile_2": str(row[em2_col]).strip() if em2_col != "-- غير محدد --" and pd.notna(row[em2_col]) else "",
+                                "transfer_number": str(row[tn_col]).strip() if tn_col != "-- غير محدد --" and pd.notna(row[tn_col]) else "",
+                                "transfer_type": str(row[tt_col]).strip() if tt_col != "-- غير محدد --" and pd.notna(row[tt_col]) else "",
+                                "branch_name": str(row[br_col]).strip() if br_col != "-- غير محدد --" and pd.notna(row[br_col]) else "",
+                                "notes": str(row[nt_col]).strip() if nt_col != "-- غير محدد --" and pd.notna(row[nt_col]) else "",
+                            }
+                            if record["user_code"] and record["name_ar"]:
+                                batch_records.append(record)
 
-                    if batch_records:
-                        if save_employees_batch(batch_records):
-                            st.toast(f"✅ تم رفع {len(batch_records)} سجل بنجاح!", icon="🎉")
-                            st.success(f"✅ تم رفع وحفظ {len(batch_records)} سجل موظف في قاعدة البيانات بنجاح!")
-                            st.rerun()
-                        else:
-                            st.error("❌ حدث خطأ أثناء إضافة البيانات السحابية.")
+                        if batch_records:
+                            if save_employees_batch(batch_records):
+                                st.toast(f"✅ تم رفع {len(batch_records)} سجل بنجاح!", icon="🎉")
+                                st.success(f"✅ تم رفع وحفظ {len(batch_records)} سجل موظف في قاعدة البيانات بنجاح!")
+                                st.rerun()
+                            else:
+                                st.error("❌ حدث خطأ أثناء إضافة البيانات السحابية.")
             except Exception as ex:
                 st.error(f"حدث خطأ أثناء قراءة الملف: {ex}")
 
@@ -811,7 +867,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
             "id": "المعرف",
             "user_code": "الكود/المستخدم",
             "name_ar": "الاسم بالعربي",
-            "name_en": "الاسم بالإنجليزي",
+            "national_id": "رقم البطاقة",
             "work_mobile": "موبايل العمل",
             "personal_mobile": "الموبايل الشخصي",
             "emergency_mobile_1": "طوارئ 1",
@@ -824,6 +880,16 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         }
         df_emp_show = df_emp.rename(columns=col_map)
         st.dataframe(df_emp_show, use_container_width=True, hide_index=True)
+
+        # زر تحميل بيانات الموظفين Excel / CSV
+        csv_emp = df_emp_show.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 تحميل كافة بيانات الموظفين (CSV / Excel)",
+            data=csv_emp,
+            file_name="employees_data_report.csv",
+            mime="text/csv",
+            type="primary"
+        )
     else:
         st.info("لا توجد بيانات موظفين مسجلة في جدول employees_data حتى الآن.")
 
@@ -849,7 +915,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
         st.subheader("🗑️ حذف توريد محدد ونقله للأرشيف")
         if payments_list:
             pay_options = {
-                f"ID: {p['id']} - {p['rider_name']} - {p['amount']} ج.م ({p['date']})": p
+                f"ID: {p['id']} - {p['rider_name']} - {int(p['amount']):,} ج.م ({p['date']})": p
                 for p in payments_list
             }
             selected_pay_str = st.selectbox(
@@ -941,7 +1007,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     if deleted_list:
         del_options = {
-            f"ID الأرشيف: {d.get('id')} | المندوب: {d.get('rider_name')} | المبلغ: {d.get('amount')} ج.م | الحذف: {d.get('deleted_at', '')}": d
+            f"ID الأرشيف: {d.get('id')} | المندوب: {d.get('rider_name')} | المبلغ: {int(d.get('amount', 0)):,} ج.م | الحذف: {d.get('deleted_at', '')}": d
             for d in deleted_list
         }
 
@@ -1053,7 +1119,6 @@ elif menu == "💰 تجميع مرتبات المناديب":
 
     grouped_data = None
 
-    # حالة رفع شيت جديد
     if sal_file:
         try:
             df_sal = (
@@ -1111,14 +1176,12 @@ elif menu == "💰 تجميع مرتبات المناديب":
 
             grouped_data = df_sal.groupby(group_cols, as_index=False)["Salary_Clean"].sum()
 
-            # حفظ البيانات سحابياً
             save_salaries_data(grouped_data)
             st.success("✅ تم معالجة وحفظ شيت المرتبات في السحابة بنجاح!")
 
         except Exception as e:
             st.error(f"❌ حدث خطأ أثناء معالجة شيت المرتبات: {e}")
 
-    # حالة الاسترجاع من السحابة إذا لم يتم رفع ملف جديد
     else:
         saved_salaries = get_salaries_data()
         if saved_salaries:
@@ -1133,11 +1196,9 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 inplace=True,
             )
 
-    # عرض وجدولة المرتبات والفلترة بالشهور
     if grouped_data is not None and not grouped_data.empty:
         st.divider()
 
-        # إذا كان العمود الخاص بالشهر موجوداً
         if "Month_Year" in grouped_data.columns and grouped_data["Month_Year"].notna().any():
             available_months = sorted(grouped_data["Month_Year"].dropna().unique().tolist())
 
@@ -1148,7 +1209,6 @@ elif menu == "💰 تجميع مرتبات المناديب":
                     ["عرض كافة الأشهر"] + available_months,
                 )
 
-            # تطبيق الفلتر
             if selected_month_filter != "عرض كافة الأشهر":
                 df_display = grouped_data[grouped_data["Month_Year"] == selected_month_filter].copy()
                 st.markdown(f"<div class='section-title'>📊 إجمالي مرتبات شهر ({selected_month_filter})</div>", unsafe_allow_html=True)
@@ -1156,8 +1216,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 df_display = grouped_data.copy()
                 st.markdown("<div class='section-title'>📊 إجمالي كافة الأشهر المسجلة</div>", unsafe_allow_html=True)
 
-            # إحصائيات سريعة
-            st.metric("إجمالي المرتبات لهذا العرض", f"{df_display['Salary_Clean'].sum():,.2f} ج.م")
+            st.metric("إجمالي المرتبات لهذا العرض", f"{int(df_display['Salary_Clean'].sum()):,} ج.م")
 
             final_sal_table = df_display.rename(
                 columns={
@@ -1172,7 +1231,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
 
         else:
             st.markdown("<div class='section-title'>📊 إجمالي المرتبات المحفوظة</div>", unsafe_allow_html=True)
-            st.metric("إجمالي المرتبات للكل", f"{grouped_data['Salary_Clean'].sum():,.2f} ج.م")
+            st.metric("إجمالي المرتبات للكل", f"{int(grouped_data['Salary_Clean'].sum()):,} ج.م")
 
             final_sal_table = grouped_data.rename(
                 columns={
@@ -1184,7 +1243,6 @@ elif menu == "💰 تجميع مرتبات المناديب":
             final_sal_table = final_sal_table.sort_values(by="إجمالي المرتب المستحق", ascending=False)
             st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
 
-        # تحميل النتائج المفلترة كملف Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             final_sal_table.to_excel(writer, index=False, sheet_name="تقرير المرتبات")
