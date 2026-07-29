@@ -126,7 +126,6 @@ def save_employee_data(emp_dict):
         supabase.table("employees_data").insert(emp_dict).execute()
         return True, ""
     except Exception as e:
-        # تجربة الحفظ بدون national_id لو العمود مش موجود في داتابيز Supabase
         if "national_id" in emp_dict:
             try:
                 backup_dict = emp_dict.copy()
@@ -143,7 +142,6 @@ def save_employees_batch(records_list):
         supabase.table("employees_data").insert(records_list).execute()
         return True, ""
     except Exception as e:
-        # تجربة الحفظ الاحتياطي بدون national_id
         try:
             backup_records = []
             for rec in records_list:
@@ -154,6 +152,14 @@ def save_employees_batch(records_list):
             return True, "تم الحفظ بنجاح، لكن يرجى إضافة عمود national_id في Supabase لتخزين الرقم القومي مستقبلاً."
         except Exception as ex:
             return False, str(ex)
+
+
+def delete_employee_by_id(emp_id):
+    try:
+        supabase.table("employees_data").delete().eq("id", emp_id).execute()
+        return True
+    except Exception:
+        return False
 
 
 def auto_register_rider(code, name):
@@ -757,13 +763,13 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         """
     <div class="main-header">
         <h1>📝 إدارة بيانات الموظفين والمناديب الشاملة</h1>
-        <p>إدخال أو رفع شيت البيانات بالكامل للتزامن مع السحابة</p>
+        <p>إدخال، رفع شيت البيانات، أو حذف سجلات الموظفين من السحابة</p>
     </div>
     """,
         unsafe_allow_html=True,
     )
 
-    tab1, tab2 = st.tabs(["✍️ إدخال يدوي فردي", "📂 رفع شيت Excel/CSV"])
+    tab1, tab2, tab3 = st.tabs(["✍️ إدخال يدوي فردي", "📂 رفع شيت Excel/CSV", "🗑️ حذف موظف"])
 
     with tab1:
         st.markdown("<div class='section-title'>➕ تسجيل موظف جديد / إضافة بيانات</div>", unsafe_allow_html=True)
@@ -882,6 +888,26 @@ elif menu == "📝 بيانات الموظفين والمناديب":
             except Exception as ex:
                 st.error(f"حدث خطأ أثناء قراءة الملف: {ex}")
 
+    with tab3:
+        st.markdown("<div class='section-title'>🗑️ حذف بيانات موظف مسجل</div>", unsafe_allow_html=True)
+        emp_list_for_del = get_employees_data()
+        if emp_list_for_del:
+            emp_map = {
+                f"الكود: {e.get('user_code', '')} | الاسم: {e.get('name_ar', '')}": e.get("id")
+                for e in emp_list_for_del
+            }
+            selected_emp = st.selectbox("اختر الموظف المراد حسفه نهائياً من السحابة:", list(emp_map.keys()))
+            if st.button("❌ حذف الموظف المحدد", type="secondary"):
+                emp_id_to_del = emp_map[selected_emp]
+                if delete_employee_by_id(emp_id_to_del):
+                    st.toast("✅ تم حذف بيانات الموظف بنجاح!", icon="🗑️")
+                    st.success("✅ تم حذف بيانات الموظف بنجاح!")
+                    st.rerun()
+                else:
+                    st.error("❌ حدث خطأ أثناء محاولة حذف الموظف.")
+        else:
+            st.info("لا يوجد موظفون مسجلون حالياً للحذف.")
+
     st.divider()
     st.markdown("<div class='section-title'>📋 قائمة بيانات الموظفين المسجلة بالسحابة</div>", unsafe_allow_html=True)
     
@@ -906,15 +932,6 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         }
         df_emp_show = df_emp.rename(columns=col_map)
         st.dataframe(df_emp_show, use_container_width=True, hide_index=True)
-
-        csv_emp = df_emp_show.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 تحميل كافة بيانات الموظفين (CSV / Excel)",
-            data=csv_emp,
-            file_name="employees_data_report.csv",
-            mime="text/csv",
-            type="primary"
-        )
     else:
         st.info("لا توجد بيانات موظفين مسجلة في جدول employees_data حتى الآن.")
 
