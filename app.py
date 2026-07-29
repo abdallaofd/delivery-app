@@ -76,7 +76,7 @@ def get_dashboard_data():
         return []
 
 
-# ---- دوال جديدة للحفظ والسحب السحابي لشيت المرتبات ----
+# ---- دوال شيت المرتبات ----
 def save_salaries_data(df_sal_grouped):
     try:
         supabase.table("salaries_data").delete().neq("id", 0).execute()
@@ -110,6 +110,23 @@ def get_salaries_data():
         return res.data if res.data else []
     except Exception:
         return []
+
+
+# ---- دوال الشاشة الجديدة (بيانات الموظفين والمناديب employees_data) ----
+def get_employees_data():
+    try:
+        res = supabase.table("employees_data").select("*").execute()
+        return res.data if res.data else []
+    except Exception:
+        return []
+
+
+def save_employee_data(emp_dict):
+    try:
+        supabase.table("employees_data").insert(emp_dict).execute()
+        return True
+    except Exception:
+        return False
 
 
 def auto_register_rider(code, name):
@@ -250,6 +267,7 @@ menu = st.sidebar.radio(
         "📊 مطابقة الداشبورد اليومية",
         "➕ إضافة / تسجيل توريد يومي",
         "👥 إدارة أسماء المناديب",
+        "📝 بيانات الموظفين والمناديب",  # الشاشة الجديدة
         "📜 سجل التوريدات الشهرية",
         "💰 تجميع مرتبات المناديب",
     ],
@@ -659,7 +677,84 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: سجل التوريدات والأرشيف
+# الشاشة الجديدة: بيانات الموظفين والمناديب (employees_data)
+# ==========================================
+elif menu == "📝 بيانات الموظفين والمناديب":
+    st.markdown(
+        """
+    <div class="main-header">
+        <h1>📝 إدارة بيانات التواصل والمناديب (employees_data)</h1>
+        <p>تسجيل وعرض أرقام الهواتف، الطوارئ، والتحويلات للشركة مباشرة في السحابة</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<div class='section-title'>➕ إضافة / تحديث بيانات موظف</div>", unsafe_allow_html=True)
+    
+    col_e1, col_e2, col_e3 = st.columns(3)
+    
+    with col_e1:
+        e_work_mobile = st.text_input("📱 موبايل العمل (work_mobile):")
+        e_personal_mobile = st.text_input("📞 الموبايل الشخصي (personal_mobile):")
+        e_branch = st.text_input("🏢 الفرع (branch_name):")
+
+    with col_e2:
+        e_emergency_1 = st.text_input("🚨 طوارئ 1 (emergency_mobile_1):")
+        e_emergency_2 = st.text_input("🚨 طوارئ 2 (emergency_mobile_2):")
+        e_notes = st.text_area("📝 ملاحظات (notes):", height=68)
+
+    with col_e3:
+        e_transfer_num = st.text_input("💳 رقم التحويل (transfer_number):")
+        e_transfer_type = st.selectbox("🔄 نوع التحويل (transfer_type):", ["فودافون كاش", "أنستا باي", "حساب بنكي", "أخرى"])
+
+    if st.button("💾 حفظ البيانات في جدول employees_data", type="primary"):
+        emp_record = {
+            "work_mobile": e_work_mobile,
+            "personal_mobile": e_personal_mobile,
+            "emergency_mobile_1": e_emergency_1,
+            "emergency_mobile_2": e_emergency_2,
+            "transfer_number": e_transfer_num,
+            "transfer_type": e_transfer_type,
+            "branch_name": e_branch,
+            "notes": e_notes
+        }
+        
+        if save_employee_data(emp_record):
+            st.toast("✅ تم حفظ البيانات في جدول الموظفين بنجاح!", icon="🎉")
+            st.success("✅ تم تسجيل بيانات الموظف السحابية بنجاح!")
+            st.rerun()
+        else:
+            st.error("❌ حدث خطأ أثناء حفظ البيانات.")
+
+    st.divider()
+    st.markdown("<div class='section-title'>📋 قائمة بيانات الموظفين المسجلة (employees_data)</div>", unsafe_allow_html=True)
+    
+    emp_list = get_employees_data()
+    if emp_list:
+        df_emp = pd.DataFrame(emp_list)
+        
+        # إعادة ترتيب وتنسيق الأعمدة للعرض
+        col_map = {
+            "id": "المعرف",
+            "work_mobile": "موبايل العمل",
+            "personal_mobile": "الموبايل الشخصي",
+            "emergency_mobile_1": "طوارئ 1",
+            "emergency_mobile_2": "طوارئ 2",
+            "transfer_number": "رقم التحويل",
+            "transfer_type": "نوع التحويل",
+            "branch_name": "اسم الفرع",
+            "notes": "ملاحظات",
+            "created_at": "تاريخ التسجيل"
+        }
+        
+        df_emp_show = df_emp.rename(columns=col_map)
+        st.dataframe(df_emp_show, use_container_width=True, hide_index=True)
+    else:
+        st.info("لا توجد بيانات موظفين مسجلة في جدول employees_data حتى الآن.")
+
+# ==========================================
+# الشاشة الخامسة: سجل التوريدات والأرشيف
 # ==========================================
 elif menu == "📜 سجل التوريدات الشهرية":
     st.markdown(
@@ -855,7 +950,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
         st.info("سجل المحذوفات فارغ، لم يتم حذف أي حركات مؤخراً.")
 
 # ==========================================
-# الشاشة الخامسة: تجميع مرتبات المناديب
+# الشاشة السادسة: تجميع مرتبات المناديب
 # ==========================================
 elif menu == "💰 تجميع مرتبات المناديب":
     st.markdown(
