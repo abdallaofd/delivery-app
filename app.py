@@ -112,7 +112,7 @@ def get_salaries_data():
         return []
 
 
-# ---- دوال الشاشة الجديدة (بيانات الموظفين والمناديب employees_data) ----
+# ---- دوال الشاشة (بيانات الموظفين والمناديب employees_data) ----
 def get_employees_data():
     try:
         res = supabase.table("employees_data").select("*").execute()
@@ -703,7 +703,6 @@ elif menu == "👥 إدارة أسماء المناديب":
                     st.success(f"تم حذف المندوب ({r_item.get('name')}) ونقله للأرشيف.")
                     st.rerun()
                 except Exception as e:
-                    # في حال عدم وجود جدول deleted_riders، يتم الحذف المباشر
                     try:
                         supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
                         st.success(f"تم حذف المندوب ({r_item.get('name')}) بنجاح.")
@@ -735,7 +734,7 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: بيانات الموظفين والمناديب (مع الرقم القومي وزر التحميل)
+# الشاشة الرابعة: بيانات الموظفين والمناديب (محدثة بالكامل مع name_en و national_id)
 # ==========================================
 elif menu == "📝 بيانات الموظفين والمناديب":
     st.markdown(
@@ -757,16 +756,17 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         with c1:
             e_user_code = st.text_input("🆔 كود المندوب / المستخدم (user_code):")
             e_name_ar = st.text_input("👤 الاسم بالعربي (name_ar):")
+            e_name_en = st.text_input("🔤 الاسم بالإنجليزية (name_en):")
             e_national_id = st.text_input("🪪 رقم البطاقة / الرقم القومي (national_id):")
-            e_branch = st.text_input("🏢 الفرع (branch_name):")
 
         with c2:
+            e_branch = st.text_input("🏢 الفرع (branch_name):")
             e_work_mobile = st.text_input("📱 موبايل العمل (work_mobile):")
             e_personal_mobile = st.text_input("📞 الموبايل الشخصي (personal_mobile):")
             e_emergency_1 = st.text_input("🚨 طوارئ 1 (emergency_mobile_1):")
-            e_emergency_2 = st.text_input("🚨 طوارئ 2 (emergency_mobile_2):")
 
         with c3:
+            e_emergency_2 = st.text_input("🚨 طوارئ 2 (emergency_mobile_2):")
             e_transfer_num = st.text_input("💳 رقم التحويل (transfer_number):")
             e_transfer_type = st.selectbox("🔄 نوع التحويل (transfer_type):", ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"])
             e_notes = st.text_area("📝 ملاحظات (notes):", height=108)
@@ -778,6 +778,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
                 emp_record = {
                     "user_code": e_user_code.strip(),
                     "name_ar": e_name_ar.strip(),
+                    "name_en": e_name_en.strip(),
                     "national_id": e_national_id.strip(),
                     "work_mobile": e_work_mobile.strip(),
                     "personal_mobile": e_personal_mobile.strip(),
@@ -811,16 +812,17 @@ elif menu == "📝 بيانات الموظفين والمناديب":
                 with m1:
                     uc_col = st.selectbox("كود المندوب/المستخدم *", cols_e, index=1 if len(cols_e)>1 else 0)
                     ar_col = st.selectbox("الاسم بالعربي *", cols_e, index=2 if len(cols_e)>2 else 0)
+                    en_col = st.selectbox("الاسم بالإنجليزية", cols_e)
                     nat_col = st.selectbox("رقم البطاقة/القومي", cols_e)
-                    br_col = st.selectbox("الفرع", cols_e)
 
                 with m2:
+                    br_col = st.selectbox("الفرع", cols_e)
                     wm_col = st.selectbox("موبايل العمل", cols_e)
                     pm_col = st.selectbox("الموبايل الشخصي", cols_e)
                     em1_col = st.selectbox("طوارئ 1", cols_e)
-                    em2_col = st.selectbox("طوارئ 2", cols_e)
 
                 with m3:
+                    em2_col = st.selectbox("طوارئ 2", cols_e)
                     tn_col = st.selectbox("رقم التحويل", cols_e)
                     tt_col = st.selectbox("نوع التحويل", cols_e)
                     nt_col = st.selectbox("ملاحظات", cols_e)
@@ -834,6 +836,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
                             record = {
                                 "user_code": str(row[uc_col]).strip() if uc_col != "-- غير محدد --" and pd.notna(row[uc_col]) else "",
                                 "name_ar": str(row[ar_col]).strip() if ar_col != "-- غير محدد --" and pd.notna(row[ar_col]) else "",
+                                "name_en": str(row[en_col]).strip() if en_col != "-- غير محدد --" and pd.notna(row[en_col]) else "",
                                 "national_id": str(row[nat_col]).strip() if nat_col != "-- غير محدد --" and pd.notna(row[nat_col]) else "",
                                 "work_mobile": str(row[wm_col]).strip() if wm_col != "-- غير محدد --" and pd.notna(row[wm_col]) else "",
                                 "personal_mobile": str(row[pm_col]).strip() if pm_col != "-- غير محدد --" and pd.notna(row[pm_col]) else "",
@@ -867,6 +870,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
             "id": "المعرف",
             "user_code": "الكود/المستخدم",
             "name_ar": "الاسم بالعربي",
+            "name_en": "الاسم بالإنجليزية",
             "national_id": "رقم البطاقة",
             "work_mobile": "موبايل العمل",
             "personal_mobile": "الموبايل الشخصي",
