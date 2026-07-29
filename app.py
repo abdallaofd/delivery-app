@@ -124,17 +124,36 @@ def get_employees_data():
 def save_employee_data(emp_dict):
     try:
         supabase.table("employees_data").insert(emp_dict).execute()
-        return True
-    except Exception:
-        return False
+        return True, ""
+    except Exception as e:
+        # تجربة الحفظ بدون national_id لو العمود مش موجود في داتابيز Supabase
+        if "national_id" in emp_dict:
+            try:
+                backup_dict = emp_dict.copy()
+                del backup_dict["national_id"]
+                supabase.table("employees_data").insert(backup_dict).execute()
+                return True, "تم الحفظ ولكن يرجى إضافة عمود national_id في Supabase لحفظ الرقم القومي."
+            except Exception as ex:
+                return False, str(ex)
+        return False, str(e)
 
 
 def save_employees_batch(records_list):
     try:
         supabase.table("employees_data").insert(records_list).execute()
-        return True
-    except Exception:
-        return False
+        return True, ""
+    except Exception as e:
+        # تجربة الحفظ الاحتياطي بدون national_id
+        try:
+            backup_records = []
+            for rec in records_list:
+                r_copy = rec.copy()
+                r_copy.pop("national_id", None)
+                backup_records.append(r_copy)
+            supabase.table("employees_data").insert(backup_records).execute()
+            return True, "تم الحفظ بنجاح، لكن يرجى إضافة عمود national_id في Supabase لتخزين الرقم القومي مستقبلاً."
+        except Exception as ex:
+            return False, str(ex)
 
 
 def auto_register_rider(code, name):
@@ -651,7 +670,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                     st.error(f"خطأ أثناء معالجة الملف: {e}")
 
 # ==========================================
-# الشاشة الثالثة: إدارة أسماء المناديب (مع ميزة حذف وأرشفة المندوب)
+# الشاشة الثالثة: إدارة أسماء المناديب
 # ==========================================
 elif menu == "👥 إدارة أسماء المناديب":
     st.markdown(
@@ -689,7 +708,6 @@ elif menu == "👥 إدارة أسماء المناديب":
             if st.button("❌ نقل المندوب للأرشيف وحذفه", type="secondary"):
                 r_item = r_options[selected_r_del]
                 try:
-                    # 1. نقل إلى أرشيف المناديب المحذوفين
                     supabase.table("deleted_riders").insert({
                         "original_id": r_item.get("id"),
                         "code": r_item.get("code", ""),
@@ -697,7 +715,6 @@ elif menu == "👥 إدارة أسماء المناديب":
                         "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
                     }).execute()
 
-                    # 2. الحذف من جدول المناديب النشط
                     supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
                     st.toast("✅ تم حذف المندوب وأرشفته بنجاح!", icon="🗑️")
                     st.success(f"تم حذف المندوب ({r_item.get('name')}) ونقله للأرشيف.")
@@ -722,7 +739,6 @@ elif menu == "👥 إدارة أسماء المناديب":
             df_r_show.columns = ["كود المندوب", "اسم المندوب"]
             st.dataframe(df_r_show, use_container_width=True, hide_index=True)
 
-            # زر تحميل قائمة المناديب Excel / CSV
             csv_r = df_r_show.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 تحميل قائمة المناديب (Excel / CSV)",
@@ -734,7 +750,7 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: بيانات الموظفين والمناديب (محدثة بالكامل مع name_en و national_id)
+# الشاشة الرابعة: بيانات الموظفين والمناديب
 # ==========================================
 elif menu == "📝 بيانات الموظفين والمناديب":
     st.markdown(
@@ -789,12 +805,15 @@ elif menu == "📝 بيانات الموظفين والمناديب":
                     "branch_name": e_branch.strip(),
                     "notes": e_notes.strip()
                 }
-                if save_employee_data(emp_record):
+                success, msg = save_employee_data(emp_record)
+                if success:
                     st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
-                    st.success("✅ تم حفظ بيانات الموظف في جدول employees_data السحابي!")
+                    st.success("✅ تم حفظ بيانات الموظف بنجاح!")
+                    if msg:
+                        st.warning(f"⚠️ تنبيه: {msg}")
                     st.rerun()
                 else:
-                    st.error("❌ حدث خطأ أثناء الحفظ. تأكد من إعدادات الجدول في Supabase.")
+                    st.error(f"❌ حدث خطأ أثناء الحفظ: {msg}")
 
     with tab2:
         st.markdown("<div class='section-title'>📂 رفع واستيراد شيت كامل لبيانات الموظفين</div>", unsafe_allow_html=True)
@@ -851,12 +870,15 @@ elif menu == "📝 بيانات الموظفين والمناديب":
                                 batch_records.append(record)
 
                         if batch_records:
-                            if save_employees_batch(batch_records):
+                            success, msg = save_employees_batch(batch_records)
+                            if success:
                                 st.toast(f"✅ تم رفع {len(batch_records)} سجل بنجاح!", icon="🎉")
-                                st.success(f"✅ تم رفع وحفظ {len(batch_records)} سجل موظف في قاعدة البيانات بنجاح!")
+                                st.success(f"✅ تم رفع وحفظ {len(batch_records)} سجل موظف بنجاح!")
+                                if msg:
+                                    st.warning(f"⚠️ تنبيه: {msg}")
                                 st.rerun()
                             else:
-                                st.error("❌ حدث خطأ أثناء إضافة البيانات السحابية.")
+                                st.error(f"❌ حدث خطأ أثناء إضافة البيانات: {msg}")
             except Exception as ex:
                 st.error(f"حدث خطأ أثناء قراءة الملف: {ex}")
 
@@ -885,7 +907,6 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         df_emp_show = df_emp.rename(columns=col_map)
         st.dataframe(df_emp_show, use_container_width=True, hide_index=True)
 
-        # زر تحميل بيانات الموظفين Excel / CSV
         csv_emp = df_emp_show.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
             label="📥 تحميل كافة بيانات الموظفين (CSV / Excel)",
@@ -929,7 +950,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
                 selected_item = pay_options[selected_pay_str]
                 pay_id = selected_item["id"]
                 try:
-                    # 1. الأرشفة
                     supabase.table("deleted_payments").insert({
                         "original_id": pay_id,
                         "rider_code": selected_item.get("rider_code", ""),
@@ -940,7 +960,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
                         "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")),
                     }).execute()
 
-                    # 2. الحذف من جدول التوريدات
                     supabase.table("payments").delete().eq("id", pay_id).execute()
                     st.toast("🗑️ تم النقل للأرشيف", icon="✅")
                     st.success("✅ تم نقل التوريد إلى الأرشيف بنجاح!")
@@ -1003,9 +1022,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     st.divider()
 
-    # ==========================================
-    # قسم أرشيف المحذوفات (مع الاسترجاع والحذف النهائي)
-    # ==========================================
     st.subheader("🗑️ أرشيف المحذوفات (الاسترجاع أو الحذف النهائي)")
     deleted_list = get_deleted_payments()
 
