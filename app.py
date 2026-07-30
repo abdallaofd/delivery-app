@@ -115,7 +115,7 @@ def get_salaries_data():
 # ---- دوال الشاشة (بيانات الموظفين والمناديب employees_data) ----
 def get_employees_data():
     try:
-        res = supabase.table("employees_data").select("*").execute()
+        res = supabase.table("employees_data").select("*").order("id", desc=False).execute()
         return res.data if res.data else []
     except Exception:
         return []
@@ -132,6 +132,22 @@ def save_employee_data(emp_dict):
                 del backup_dict["national_id"]
                 supabase.table("employees_data").insert(backup_dict).execute()
                 return True, "تم الحفظ ولكن يرجى إضافة عمود national_id في Supabase لحفظ الرقم القومي."
+            except Exception as ex:
+                return False, str(ex)
+        return False, str(e)
+
+
+def update_employee_data(emp_id, emp_dict):
+    try:
+        supabase.table("employees_data").update(emp_dict).eq("id", emp_id).execute()
+        return True, ""
+    except Exception as e:
+        if "national_id" in emp_dict:
+            try:
+                backup_dict = emp_dict.copy()
+                del backup_dict["national_id"]
+                supabase.table("employees_data").update(backup_dict).eq("id", emp_id).execute()
+                return True, "تم التعديل ولكن لم يتم تحديث الرقم القومي للعدم وجود العامود في Supabase."
             except Exception as ex:
                 return False, str(ex)
         return False, str(e)
@@ -763,35 +779,35 @@ elif menu == "📝 بيانات الموظفين والمناديب":
         """
     <div class="main-header">
         <h1>📝 إدارة بيانات الموظفين والمناديب الشاملة</h1>
-        <p>إدخال، رفع شيت البيانات، أو حذف سجلات الموظفين من السحابة</p>
+        <p>إدخال، تعديل، رفع شيت البيانات، أو حذف سجلات الموظفين من السحابة</p>
     </div>
     """,
         unsafe_allow_html=True,
     )
 
-    tab1, tab2, tab3 = st.tabs(["✍️ إدخال يدوي فردي", "📂 رفع شيت Excel/CSV", "🗑️ حذف موظف"])
+    tab1, tab2, tab3, tab4 = st.tabs(["✍️ إدخال يدوي فردي", "✏️ تعديل بيانات موظف", "📂 رفع شيت Excel/CSV", "🗑️ حذف موظف"])
 
     with tab1:
         st.markdown("<div class='section-title'>➕ تسجيل موظف جديد / إضافة بيانات</div>", unsafe_allow_html=True)
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            e_user_code = st.text_input("🆔 كود المندوب / المستخدم (user_code):")
-            e_name_ar = st.text_input("👤 الاسم بالعربي (name_ar):")
-            e_name_en = st.text_input("🔤 الاسم بالإنجليزية (name_en):")
-            e_national_id = st.text_input("🪪 رقم البطاقة / الرقم القومي (national_id):")
+            e_user_code = st.text_input("🆔 كود المندوب / المستخدم (user_code):", key="add_code")
+            e_name_ar = st.text_input("👤 الاسم بالعربي (name_ar):", key="add_name_ar")
+            e_name_en = st.text_input("🔤 الاسم بالإنجليزية (name_en):", key="add_name_en")
+            e_national_id = st.text_input("🪪 رقم البطاقة / الرقم القومي (national_id):", key="add_nat_id")
 
         with c2:
-            e_branch = st.text_input("🏢 الفرع (branch_name):")
-            e_work_mobile = st.text_input("📱 موبايل العمل (work_mobile):")
-            e_personal_mobile = st.text_input("📞 الموبايل الشخصي (personal_mobile):")
-            e_emergency_1 = st.text_input("🚨 طوارئ 1 (emergency_mobile_1):")
+            e_branch = st.text_input("🏢 الفرع (branch_name):", key="add_branch")
+            e_work_mobile = st.text_input("📱 موبايل العمل (work_mobile):", key="add_work_mob")
+            e_personal_mobile = st.text_input("📞 الموبايل الشخصي (personal_mobile):", key="add_pers_mob")
+            e_emergency_1 = st.text_input("🚨 طوارئ 1 (emergency_mobile_1):", key="add_em1")
 
         with c3:
-            e_emergency_2 = st.text_input("🚨 طوارئ 2 (emergency_mobile_2):")
-            e_transfer_num = st.text_input("💳 رقم التحويل (transfer_number):")
-            e_transfer_type = st.selectbox("🔄 نوع التحويل (transfer_type):", ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"])
-            e_notes = st.text_area("📝 ملاحظات (notes):", height=108)
+            e_emergency_2 = st.text_input("🚨 طوارئ 2 (emergency_mobile_2):", key="add_em2")
+            e_transfer_num = st.text_input("💳 رقم التحويل (transfer_number):", key="add_trans_num")
+            e_transfer_type = st.selectbox("🔄 نوع التحويل (transfer_type):", ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"], key="add_trans_type")
+            e_notes = st.text_area("📝 ملاحظات (notes):", height=108, key="add_notes")
 
         if st.button("💾 حفظ البيانات الفردية في السحابة", type="primary"):
             if not e_user_code or not e_name_ar:
@@ -822,6 +838,74 @@ elif menu == "📝 بيانات الموظفين والمناديب":
                     st.error(f"❌ حدث خطأ أثناء الحفظ: {msg}")
 
     with tab2:
+        st.markdown("<div class='section-title'>✏️ تعديل بيانات موظف مسجل</div>", unsafe_allow_html=True)
+        emp_list_for_edit = get_employees_data()
+        
+        if emp_list_for_edit:
+            emp_map_edit = {
+                f"الكود: {e.get('user_code', '')} | الاسم: {e.get('name_ar', '')}": e
+                for e in emp_list_for_edit
+            }
+            selected_emp_label = st.selectbox("اختر الموظف المراد تعديل بياناته:", list(emp_map_edit.keys()), key="select_emp_edit")
+            target_emp = emp_map_edit[selected_emp_label]
+            emp_id = target_emp.get("id")
+
+            # نموذج التعديل بالبيانات الحالية
+            ce1, ce2, ce3 = st.columns(3)
+            with ce1:
+                edit_user_code = st.text_input("🆔 كود المندوب:", value=str(target_emp.get("user_code", "") or ""), key="ed_code")
+                edit_name_ar = st.text_input("👤 الاسم بالعربي:", value=str(target_emp.get("name_ar", "") or ""), key="ed_name_ar")
+                edit_name_en = st.text_input("🔤 الاسم بالإنجليزية:", value=str(target_emp.get("name_en", "") or ""), key="ed_name_en")
+                edit_national_id = st.text_input("🪪 رقم البطاقة:", value=str(target_emp.get("national_id", "") or ""), key="ed_nat_id")
+
+            with ce2:
+                edit_branch = st.text_input("🏢 الفرع:", value=str(target_emp.get("branch_name", "") or ""), key="ed_branch")
+                edit_work_mobile = st.text_input("📱 موبايل العمل:", value=str(target_emp.get("work_mobile", "") or ""), key="ed_work_mob")
+                edit_personal_mobile = st.text_input("📞 الموبايل الشخصي:", value=str(target_emp.get("personal_mobile", "") or ""), key="ed_pers_mob")
+                edit_emergency_1 = st.text_input("🚨 طوارئ 1:", value=str(target_emp.get("emergency_mobile_1", "") or ""), key="ed_em1")
+
+            with ce3:
+                edit_emergency_2 = st.text_input("🚨 طوارئ 2:", value=str(target_emp.get("emergency_mobile_2", "") or ""), key="ed_em2")
+                edit_transfer_num = st.text_input("💳 رقم التحويل:", value=str(target_emp.get("transfer_number", "") or ""), key="ed_trans_num")
+                
+                transfer_types = ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"]
+                curr_tt = target_emp.get("transfer_type", "")
+                tt_index = transfer_types.index(curr_tt) if curr_tt in transfer_types else 0
+                
+                edit_transfer_type = st.selectbox("🔄 نوع التحويل:", transfer_types, index=tt_index, key="ed_trans_type")
+                edit_notes = st.text_area("📝 ملاحظات:", value=str(target_emp.get("notes", "") or ""), height=108, key="ed_notes")
+
+            if st.button("🔄 حفظ التعديلات في السحابة", type="primary"):
+                if not edit_user_code or not edit_name_ar:
+                    st.error("❌ لا يمكن ترك كود المندوب أو الاسم بالعربي فارغاً.")
+                else:
+                    updated_record = {
+                        "user_code": edit_user_code.strip(),
+                        "name_ar": edit_name_ar.strip(),
+                        "name_en": edit_name_en.strip(),
+                        "national_id": edit_national_id.strip(),
+                        "work_mobile": edit_work_mobile.strip(),
+                        "personal_mobile": edit_personal_mobile.strip(),
+                        "emergency_mobile_1": edit_emergency_1.strip(),
+                        "emergency_mobile_2": edit_emergency_2.strip(),
+                        "transfer_number": edit_transfer_num.strip(),
+                        "transfer_type": edit_transfer_type,
+                        "branch_name": edit_branch.strip(),
+                        "notes": edit_notes.strip()
+                    }
+                    success, msg = update_employee_data(emp_id, updated_record)
+                    if success:
+                        st.toast("✅ تم تحديث البيانات بنجاح!", icon="🎉")
+                        st.success("✅ تم تحديث بيانات الموظف في السحابة بنجاح!")
+                        if msg:
+                            st.warning(f"⚠️ تنبيه: {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ حدث خطأ أثناء التحديث: {msg}")
+        else:
+            st.info("لا توجد بيانات موظفين مسجلة حالياً للتعديل.")
+
+    with tab3:
         st.markdown("<div class='section-title'>📂 رفع واستيراد شيت كامل لبيانات الموظفين</div>", unsafe_allow_html=True)
         emp_file = st.file_uploader("ارفع شيت البيانات (Excel أو CSV)", type=["xlsx", "xls", "csv"], key="emp_uploader")
 
@@ -888,7 +972,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
             except Exception as ex:
                 st.error(f"حدث خطأ أثناء قراءة الملف: {ex}")
 
-    with tab3:
+    with tab4:
         st.markdown("<div class='section-title'>🗑️ حذف بيانات موظف مسجل</div>", unsafe_allow_html=True)
         emp_list_for_del = get_employees_data()
         if emp_list_for_del:
@@ -909,7 +993,7 @@ elif menu == "📝 بيانات الموظفين والمناديب":
             st.info("لا يوجد موظفون مسجلون حالياً للحذف.")
 
     st.divider()
-    st.markdown("<div class='section-title'>📋 قائمة بيانات الموظفين المسجلة بالسحابة</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>📋 قائمة بيانات الموظفين المسجلة بالسحابة (مع إكانية التعديل السريع)</div>", unsafe_allow_html=True)
     
     emp_list = get_employees_data()
     if emp_list:
@@ -931,7 +1015,34 @@ elif menu == "📝 بيانات الموظفين والمناديب":
             "created_at": "تاريخ التسجيل"
         }
         df_emp_show = df_emp.rename(columns=col_map)
-        st.dataframe(df_emp_show, use_container_width=True, hide_index=True)
+        
+        # استخدام st.data_editor لإتاحة التعديل التفاعلي المباشر
+        edited_df = st.data_editor(df_emp_show, use_container_width=True, hide_index=True, disabled=["المعرف", "تاريخ التسجيل"], key="emp_editor")
+        
+        if st.button("💾 حفظ التعديلات المباشرة من الجدول", type="primary"):
+            updated_count = 0
+            for idx, row in edited_df.iterrows():
+                e_id = row["المعرف"]
+                upd_data = {
+                    "user_code": str(row["الكود/المستخدم"]).strip() if pd.notna(row["الكود/المستخدم"]) else "",
+                    "name_ar": str(row["الاسم بالعربي"]).strip() if pd.notna(row["الاسم بالعربي"]) else "",
+                    "name_en": str(row["الاسم بالإنجليزية"]).strip() if pd.notna(row["الاسم بالإنجليزية"]) else "",
+                    "national_id": str(row["رقم البطاقة"]).strip() if pd.notna(row["رقم البطاقة"]) else "",
+                    "work_mobile": str(row["موبايل العمل"]).strip() if pd.notna(row["موبايل العمل"]) else "",
+                    "personal_mobile": str(row["الموبايل الشخصي"]).strip() if pd.notna(row["الموبايل الشخصي"]) else "",
+                    "emergency_mobile_1": str(row["طوارئ 1"]).strip() if pd.notna(row["طوارئ 1"]) else "",
+                    "emergency_mobile_2": str(row["طوارئ 2"]).strip() if pd.notna(row["طوارئ 2"]) else "",
+                    "transfer_number": str(row["رقم التحويل"]).strip() if pd.notna(row["رقم التحويل"]) else "",
+                    "transfer_type": str(row["نوع التحويل"]).strip() if pd.notna(row["نوع التحويل"]) else "",
+                    "branch_name": str(row["اسم الفرع"]).strip() if pd.notna(row["اسم الفرع"]) else "",
+                    "notes": str(row["ملاحظات"]).strip() if pd.notna(row["ملاحظات"]) else "",
+                }
+                success, _ = update_employee_data(e_id, upd_data)
+                if success:
+                    updated_count += 1
+            st.toast("✅ تم تحديث الجدول بالكامل!", icon="🎉")
+            st.success("✅ تم حفظ كافة التعديلات في قاعدة البيانات السحابية بنجاح!")
+            st.rerun()
     else:
         st.info("لا توجد بيانات موظفين مسجلة في جدول employees_data حتى الآن.")
 
