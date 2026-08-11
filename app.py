@@ -220,33 +220,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* إخفاء الهيدر والشريط العلوي بالكامل وأيقونات Fork و GitHub */
-    header, 
-    [data-testid="stHeader"], 
-    [data-testid="stHeader"] *,
-    .stAppHeader,
-    .stAppHeader *,
-    div[class*="stAppHeader"],
-    div[class*="ViewerBadge"],
-    #MainMenu, 
-    footer, 
-    div[data-testid="stToolbar"], 
-    div[data-testid="stDecoration"], 
-    div[data-testid="stStatusWidget"] {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0px !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-    }
-
-    /* إلغاء المسافة الفاضية من فوق بعد إخفاء الهيدر */
-    .stApp {
-        margin-top: -50px !important;
-    }
-    .main .block-container {
-        padding-top: 1rem !important;
-    }
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
     
     html, body, [class*="css"] {
