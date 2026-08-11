@@ -220,13 +220,25 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* إخفاء الهيدر والشريط العلوي وأيقونة جيت هب */
-    header[data-testid="stHeader"] { visibility: hidden; height: 0%; }
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    div[data-testid="stToolbar"] { visibility: hidden !important; }
-    div[data-testid="stDecoration"] { visibility: hidden !important; }
-    div[data-testid="stStatusWidget"] { visibility: hidden !important; }
+    /* إخفاء الشريط العلوي وأيقونة جيت هب والنقاط الثلاث بالكامل */
+    [data-testid="stHeader"], 
+    header[data-testid="stHeader"],
+    .stApp > header,
+    #MainMenu, 
+    footer, 
+    div[data-testid="stToolbar"], 
+    div[data-testid="stDecoration"], 
+    div[data-testid="stStatusWidget"],
+    .stAppToolbar {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+    }
+
+    /* رفع المحتوى للأعلى لإلغاء المساحة الفارغة بعد إخفاء الهيدر */
+    .main .block-container {
+        padding-top: 2rem !important;
+    }
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
     
     html, body, [class*="css"] {
