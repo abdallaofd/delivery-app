@@ -220,6 +220,13 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    /* إخفاء الهيدر والشريط العلوي وأيقونة جيت هب */
+    header[data-testid="stHeader"] { visibility: hidden; height: 0%; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    div[data-testid="stToolbar"] { visibility: hidden !important; }
+    div[data-testid="stDecoration"] { visibility: hidden !important; }
+    div[data-testid="stStatusWidget"] { visibility: hidden !important; }
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
     
     html, body, [class*="css"] {
