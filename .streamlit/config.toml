@@ -1,6 +1,0 @@
-[client]
-toolbarMode = "minimal"
-showSidebarNavigation = true
-
-[theme]
-base = "light"
