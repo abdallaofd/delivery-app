@@ -18,7 +18,24 @@ def init_supabase():
 supabase = init_supabase()
 
 
-# دوال قراءة وحفظ البيانات من السحابة مباشرة
+def clean_text(text):
+    if pd.isna(text) or text is None:
+        return ""
+    text_str = str(text).strip().lower()
+    if text_str.endswith(".0"):
+        text_str = text_str[:-2]
+    return " ".join(text_str.split())
+
+
+def clean_code(code_val):
+    if pd.isna(code_val) or code_val is None:
+        return ""
+    c_str = str(code_val).strip()
+    if c_str.endswith(".0"):
+        c_str = c_str[:-2]
+    return c_str
+
+
 def get_riders():
     try:
         res = supabase.table("riders").select("*").execute()
@@ -43,13 +60,49 @@ def get_deleted_payments():
         return []
 
 
+def auto_register_rider(code, name, phone=""):
+    if not name or str(name).strip() == "":
+        return
+    
+    clean_c = clean_code(code)
+    clean_n = clean_text(name)
+    clean_p = clean_code(phone)
+
+    existing_riders = get_riders()
+    
+    found_rider = None
+    for r in existing_riders:
+        r_c = clean_code(r.get("code"))
+        r_n = clean_text(r.get("name"))
+        
+        if (clean_c and r_c == clean_c) or (clean_n and r_n == clean_n):
+            found_rider = r
+            break
+
+    if not found_rider:
+        try:
+            supabase.table("riders").insert(
+                {"code": clean_c, "name": str(name).strip(), "phone": clean_p}
+            ).execute()
+        except Exception:
+            pass
+    else:
+        # إذا كان المندوب موجوداً ولكن ليس لديه رقم موبايل، وتوفر رقم جديد يتم تحديثه
+        existing_phone = clean_code(found_rider.get("phone"))
+        if (not existing_phone or existing_phone == "0") and clean_p and clean_p != "0":
+            try:
+                supabase.table("riders").update({"phone": clean_p}).eq("id", found_rider.get("id")).execute()
+            except Exception:
+                pass
+
+
 def save_dashboard_data(df_dash, id_col, name_col, cod_col, status_col, vendor_col):
     try:
         supabase.table("dashboard_data").delete().neq("id", 0).execute()
         records = []
         for _, r in df_dash.iterrows():
             records.append({
-                "rider_code": str(r[id_col]).strip() if pd.notna(r[id_col]) else "",
+                "rider_code": clean_code(r[id_col]),
                 "rider_name": str(r[name_col]).strip() if pd.notna(r[name_col]) else "",
                 "amount": float(r[cod_col]) if pd.notna(r[cod_col]) else 0.0,
                 "status": str(r[status_col]).strip() if status_col and pd.notna(r[status_col]) else "",
@@ -76,15 +129,14 @@ def get_dashboard_data():
         return []
 
 
-# ---- دوال شيت المرتبات ----
 def save_salaries_data(df_sal_grouped):
     try:
         supabase.table("salaries_data").delete().neq("id", 0).execute()
         records = []
         for _, r in df_sal_grouped.iterrows():
             rec = {
-                "rider_code": str(r["Code_Clean"]),
-                "rider_name": str(r["Name_Clean"]),
+                "rider_code": clean_code(r["Code_Clean"]),
+                "rider_name": str(r["Name_Clean"]).strip(),
                 "amount": float(r["Salary_Clean"]),
             }
             if "Month_Year" in r:
@@ -112,38 +164,8 @@ def get_salaries_data():
         return []
 
 
-def auto_register_rider(code, name, phone=""):
-    if not name or str(name).strip() == "":
-        return
-    code_str = str(code).strip() if pd.notna(code) else ""
-    name_str = str(name).strip()
-    phone_str = str(phone).strip() if pd.notna(phone) else ""
-
-    existing_riders = get_riders()
-    exists = any(
-        r.get("name") == name_str or (code_str and r.get("code") == code_str)
-        for r in existing_riders
-    )
-
-    if not exists:
-        try:
-            supabase.table("riders").insert(
-                {"code": code_str, "name": name_str, "phone": phone_str}
-            ).execute()
-        except Exception:
-            pass
-
-
-def clean_text(text):
-    if pd.isna(text):
-        return ""
-    text = str(text).strip().lower()
-    text = " ".join(text.split())
-    return text
-
-
 # ==========================================
-# 2. إعدادات الصفحة والتصميم الاحترافي المنسق
+# 2. إعدادات الصفحة والتصميم
 # ==========================================
 st.set_page_config(
     page_title="نظام إدارة الداشبورد والتوريدات",
@@ -157,10 +179,14 @@ st.markdown(
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
     
-    /* إخفاء القائمة العلوية والشريط وزر Fork و GitHub */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    [data-testid="stStatusWidget"] {display: none !important;}
+    .stAppDeployButton {display: none !important;}
+    div[class*="stAppViewer"] > footer {display: none !important;}
+    div[data-testid="stToolbar"] {display: none !important;}
     
     html, body, [class*="css"] {
         font-family: 'Cairo', sans-serif;
@@ -289,7 +315,6 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 st.success("✅ تم مسح شيت الداشبورد!")
                 st.rerun()
 
-    # استخدام st.spinner لإظهار مؤشر التحميل للفريق أثناء معالجة البيانات وجلب السحابة
     with st.spinner("⏳ 👨🏻‍🦯🏃🏻 جاري تحميل البيانات أستنو شوية  ..."):
         df_dash_raw = None
         if dash_file:
@@ -340,7 +365,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             try:
                 df_dash = df_dash_raw.dropna(subset=[name_col_dash]).copy()
                 df_dash["Name_Clean"] = df_dash[name_col_dash].apply(clean_text)
-                df_dash["Code_Clean"] = df_dash[id_col].astype(str).str.strip()
+                df_dash["Code_Clean"] = df_dash[id_col].apply(clean_code)
                 df_dash["COD_Balance"] = pd.to_numeric(
                     df_dash[cod_col], errors="coerce"
                 ).fillna(0)
@@ -374,28 +399,29 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 riders_db = get_riders()
                 if riders_db:
                     df_riders_db = pd.DataFrame(riders_db)
-                    df_riders_db["Code_Clean"] = df_riders_db.get("code", pd.Series([""]*len(df_riders_db))).astype(str).str.strip()
+                    df_riders_db["Code_Clean"] = df_riders_db.get("code", pd.Series([""]*len(df_riders_db))).apply(clean_code)
                     df_riders_db["Name_Clean"] = df_riders_db.get("name", pd.Series([""]*len(df_riders_db))).apply(clean_text)
                     
                     if "phone" in df_riders_db.columns:
-                        df_riders_db["Phone_Val"] = df_riders_db["phone"].astype(str).str.strip()
+                        df_riders_db["Phone_Val"] = df_riders_db["phone"].apply(clean_code)
                     else:
-                        df_riders_db["Phone_Val"] = "غير مسجل"
+                        df_riders_db["Phone_Val"] = ""
 
+                    # خريطة البحث بالكود وبالاسم
                     phone_map_code = df_riders_db[df_riders_db["Code_Clean"] != ""].set_index("Code_Clean")["Phone_Val"].to_dict()
                     phone_map_name = df_riders_db[df_riders_db["Name_Clean"] != ""].set_index("Name_Clean")["Phone_Val"].to_dict()
 
                     merged["رقم الموبايل"] = merged["Code_Clean"].map(phone_map_code)
                     merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna(merged["Name_Clean"].map(phone_map_name))
-                    merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna("غير مسجل")
+                    merged["رقم الموبايل"] = merged["رقم الموبايل"].replace("", "غير مسجل").fillna("غير مسجل")
                 else:
                     merged["رقم الموبايل"] = "غير مسجل"
 
-                # 3) جلب إجمالي المرتب من آخر شيت مرتبات محفوظ
+                # 3) جلب إجمالي المرتب
                 salaries_db = get_salaries_data()
                 if salaries_db:
                     df_sal_db = pd.DataFrame(salaries_db)
-                    df_sal_db["Code_Clean"] = df_sal_db.get("rider_code", pd.Series([""]*len(df_sal_db))).astype(str).str.strip()
+                    df_sal_db["Code_Clean"] = df_sal_db.get("rider_code", pd.Series([""]*len(df_sal_db))).apply(clean_code)
                     df_sal_db["Name_Clean"] = df_sal_db.get("rider_name", pd.Series([""]*len(df_sal_db))).apply(clean_text)
                     df_sal_db["Salary_Val"] = pd.to_numeric(df_sal_db.get("amount", pd.Series([0]*len(df_sal_db))), errors="coerce").fillna(0)
 
@@ -436,7 +462,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                     "إجمالي عهدة الداشبورد", f"{int(merged['COD_Balance'].sum()):,} ج.م"
                 )
                 c2.metric(
-                    "إجمالي التوريدات المسجلة", f"{int(merged['Total_Paid'].sum()):,} ج.m"
+                    "إجمالي التوريدات المسجلة", f"{int(merged['Total_Paid'].sum()):,} ج.م"
                 )
                 c3.metric(
                     "الصافي المطلوب تحصيله",
@@ -460,6 +486,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 )
 
                 final_table = merged[display_cols].copy()
+                final_table[id_col] = final_table[id_col].apply(clean_code)
                 final_table.rename(
                     columns={
                         id_col: "كود المندوب",
@@ -510,7 +537,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
             selected_rider_code = rider_code_input
         else:
             rider_options = {
-                f"{r.get('code', '')} - {r['name']}": r for r in riders_data if "name" in r
+                f"{clean_code(r.get('code'))} - {r['name']}": r for r in riders_data if "name" in r
             }
             choice = st.selectbox("اختر المندوب:", list(rider_options.keys()), key="single_pay_select")
             selected_rider_name = rider_options[choice]["name"]
@@ -525,15 +552,14 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                 with st.spinner("جاري إرسال الحفظ للسحابة..."):
                     auto_register_rider(selected_rider_code, selected_rider_name)
                     supabase.table("payments").insert({
-                        "rider_code": str(selected_rider_code),
-                        "rider_name": selected_rider_name,
+                        "rider_code": clean_code(selected_rider_code),
+                        "rider_name": str(selected_rider_name).strip(),
                         "date": str(pay_date),
                         "amount": float(amount),
                         "notes": notes if notes else "تعديل/إدخال يدوي",
                     }).execute()
                 
                 st.toast(f"✅ تم الحفظ: {amount} ج.م - {selected_rider_name}", icon="🎉")
-                
                 st.success(
                     f"🎉 **تم تسجيل التوريد بنجاح!**\n\n"
                     f"👤 **المندوب:** {selected_rider_name}\n\n"
@@ -620,7 +646,6 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                     )
 
                     new_payments = []
-                    new_riders = {}
 
                     for _, r in df_b.iterrows():
                         if pd.notna(r[name_c]) and pd.notna(r[amount_c]):
@@ -628,7 +653,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 raw_amt = str(r[amount_c]).replace(",", "").strip()
                                 amt_val = float(raw_amt)
                                 r_name_val = str(r[name_c]).strip()
-                                r_code_val = str(r[code_c]).strip() if code_c and pd.notna(r[code_c]) else ""
+                                r_code_val = clean_code(r[code_c]) if code_c and pd.notna(r[code_c]) else ""
 
                                 parsed_date = pd.to_datetime(r[date_c], errors="coerce") if date_c and pd.notna(r[date_c]) else pd.Timestamp.now()
                                 r_date_val = str(parsed_date.date()) if pd.notna(parsed_date) else str(pd.Timestamp.now().date())
@@ -640,9 +665,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 )
 
                                 if amt_val > 0 and r_name_val:
-                                    if r_name_val not in new_riders:
-                                        new_riders[r_name_val] = r_code_val
-
+                                    auto_register_rider(r_code_val, r_name_val)
                                     new_payments.append({
                                         "rider_code": r_code_val,
                                         "rider_name": r_name_val,
@@ -654,16 +677,6 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
                                 continue
 
                     if new_payments:
-                        existing_riders = get_riders()
-                        existing_names = {r.get("name") for r in existing_riders if "name" in r}
-                        riders_to_insert = [
-                            {"code": code, "name": name, "phone": ""}
-                            for name, code in new_riders.items()
-                            if name not in existing_names
-                        ]
-                        if riders_to_insert:
-                            supabase.table("riders").insert(riders_to_insert).execute()
-
                         supabase.table("payments").insert(new_payments).execute()
                         st.toast(f"✅ تم رفع {len(new_payments)} حركة!", icon="🚀")
                         st.success(f"✅ تم رفع {len(new_payments)} حركة توريد بنجاح للسحابة!")
@@ -716,36 +729,21 @@ elif menu == "👥 إدارة أسماء المناديب":
                     name_col_r = next((c for c in rf_cols if any(k in str(c).lower() for k in ["name", "اسم", "rider", "طيار"])), rf_cols[1] if len(rf_cols) > 1 else rf_cols[0])
                     phone_col_r = next((c for c in rf_cols if any(k in str(c).lower() for k in ["phone", "mobile", "موبايل", "هاتف", "تليفون"])), None)
 
-                    existing_list = get_riders()
-                    existing_names = {clean_text(r.get("name")): r for r in existing_list if "name" in r}
-
-                    new_riders_to_add = []
                     count_added = 0
-
                     for _, row in df_rf.iterrows():
                         raw_name = str(row[name_col_r]).strip() if pd.notna(row[name_col_r]) else ""
                         if not raw_name:
                             continue
                         
-                        raw_code = str(row[code_col_r]).strip() if pd.notna(row[code_col_r]) else ""
-                        raw_phone = str(row[phone_col_r]).strip() if phone_col_r and pd.notna(row[phone_col_r]) else ""
+                        raw_code = clean_code(row[code_col_r]) if pd.notna(row[code_col_r]) else ""
+                        raw_phone = clean_code(row[phone_col_r]) if phone_col_r and pd.notna(row[phone_col_r]) else ""
 
-                        clean_n = clean_text(raw_name)
-                        if clean_n not in existing_names:
-                            new_riders_to_add.append({
-                                "code": raw_code,
-                                "name": raw_name,
-                                "phone": raw_phone
-                            })
-                            count_added += 1
+                        auto_register_rider(raw_code, raw_name, raw_phone)
+                        count_added += 1
 
-                    if new_riders_to_add:
-                        supabase.table("riders").insert(new_riders_to_add).execute()
-                        st.toast(f"✅ تم إضافة {count_added} مندوب جديد!", icon="🚀")
-                        st.success(f"✅ تم استيراد إضافة {count_added} مندوب بنجاح!")
-                        st.rerun()
-                    else:
-                        st.info("💡 جميع المناديب بالشيت مسجلين مسبقاً بقاعدة البيانات.")
+                    st.toast(f"✅ تم معالجة الشيت بنجاح!", icon="🚀")
+                    st.success("✅ تم تحديث ومعالجة قاعدة البيانات بدون تكرار بنجاح!")
+                    st.rerun()
                 except Exception as e:
                     st.error(f"خطأ أثناء رفع الملف: {e}")
 
@@ -757,20 +755,19 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.markdown("<div class='section-title'>📱 إضافة / تعديل رقم الموبايل والكود</div>", unsafe_allow_html=True)
         riders_list_edit = get_riders()
         if riders_list_edit:
-            r_edit_options = {f"{r.get('code', '')} - {r.get('name', '')}": r for r in riders_list_edit if "name" in r}
+            r_edit_options = {f"{clean_code(r.get('code'))} - {r.get('name', '')}": r for r in riders_list_edit if "name" in r}
             if r_edit_options:
                 selected_r_edit = st.selectbox("اختر المندوب لتحديث بياناته:", list(r_edit_options.keys()), key="select_edit_rider")
-                
                 selected_rider_obj = r_edit_options[selected_r_edit]
                 
-                new_c = st.text_input("كود المندوب:", value=str(selected_rider_obj.get("code", "")), key="edit_rider_code")
-                new_p = st.text_input("رقم الموبايل:", value=str(selected_rider_obj.get("phone", "")), key="edit_rider_phone")
+                new_c = st.text_input("كود المندوب:", value=clean_code(selected_rider_obj.get("code")), key="edit_rider_code")
+                new_p = st.text_input("رقم الموبايل:", value=clean_code(selected_rider_obj.get("phone")), key="edit_rider_phone")
 
                 if st.button("💾 حفظ التعديل للمندوب", type="primary", key="btn_save_edit_rider"):
                     try:
                         supabase.table("riders").update({
-                            "code": new_c.strip(),
-                            "phone": new_p.strip()
+                            "code": clean_code(new_c),
+                            "phone": clean_code(new_p)
                         }).eq("id", selected_rider_obj.get("id")).execute()
 
                         st.toast("✅ تم تحديث بيانات المندوب!", icon="📲")
@@ -783,7 +780,7 @@ elif menu == "👥 إدارة أسماء المناديب":
         st.markdown("<div class='section-title'>🗑️ حذف مندوب وأرشفته</div>", unsafe_allow_html=True)
         riders_list = get_riders()
         if riders_list:
-            r_options = {f"{r.get('code', '')} - {r.get('name', '')}": r for r in riders_list if "name" in r}
+            r_options = {f"{clean_code(r.get('code'))} - {r.get('name', '')}": r for r in riders_list if "name" in r}
             if r_options:
                 selected_r_del = st.selectbox("اختر المندوب المراد حذفه:", list(r_options.keys()), key="del_rider_select")
                 
@@ -792,9 +789,9 @@ elif menu == "👥 إدارة أسماء المناديب":
                     try:
                         supabase.table("deleted_riders").insert({
                             "original_id": r_item.get("id"),
-                            "code": r_item.get("code", ""),
+                            "code": clean_code(r_item.get("code")),
                             "name": r_item.get("name", ""),
-                            "phone": r_item.get("phone", ""),
+                            "phone": clean_code(r_item.get("phone")),
                             "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
                         }).execute()
 
@@ -819,9 +816,14 @@ elif menu == "👥 إدارة أسماء المناديب":
         df_r_show = pd.DataFrame(riders_list)
         
         cols_to_show = []
-        if "code" in df_r_show.columns: cols_to_show.append("code")
-        if "name" in df_r_show.columns: cols_to_show.append("name")
-        if "phone" in df_r_show.columns: cols_to_show.append("phone")
+        if "code" in df_r_show.columns: 
+            df_r_show["code"] = df_r_show["code"].apply(clean_code)
+            cols_to_show.append("code")
+        if "name" in df_r_show.columns: 
+            cols_to_show.append("name")
+        if "phone" in df_r_show.columns: 
+            df_r_show["phone"] = df_r_show["phone"].apply(clean_code)
+            cols_to_show.append("phone")
         
         df_r_show = df_r_show[cols_to_show].fillna("")
         df_r_show.rename(columns={
@@ -859,7 +861,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     payments_list = get_payments()
 
-    # --- قسم حذف توريد محدد ---
     st.subheader("🗑️ حذف توريد محدد ونقله للأرشيف")
     if payments_list:
         pay_options = {
@@ -881,7 +882,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
                     try:
                         supabase.table("deleted_payments").insert({
                             "original_id": pay_id,
-                            "rider_code": selected_item.get("rider_code", ""),
+                            "rider_code": clean_code(selected_item.get("rider_code")),
                             "rider_name": selected_item.get("rider_name", ""),
                             "amount": selected_item.get("amount", 0.0),
                             "date": str(selected_item.get("date", "")),
@@ -900,10 +901,11 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     st.divider()
 
-    # --- جدول التوريدات النشطة ---
     st.subheader("📋 التوريدات الحالية النشطة")
     if payments_list:
         df_p = pd.DataFrame(payments_list)
+        if "rider_code" in df_p.columns:
+            df_p["rider_code"] = df_p["rider_code"].apply(clean_code)
         cols = ["id", "rider_code", "rider_name", "date", "amount", "notes"]
         available_cols = [c for c in cols if c in df_p.columns]
         df_p_show = df_p[available_cols].copy()
@@ -924,7 +926,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     st.divider()
 
-    # --- أرشيف المحذوفات ---
     st.subheader("🗑️ أرشيف المحذوفات (الاسترجاع أو الحذف النهائي)")
     deleted_list = get_deleted_payments()
 
@@ -949,7 +950,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
                     del_id = item_to_restore.get("id")
                     try:
                         supabase.table("payments").insert({
-                            "rider_code": item_to_restore.get("rider_code", ""),
+                            "rider_code": clean_code(item_to_restore.get("rider_code")),
                             "rider_name": item_to_restore.get("rider_name", ""),
                             "date": str(item_to_restore.get("date", "")),
                             "amount": float(item_to_restore.get("amount", 0.0)),
@@ -987,6 +988,8 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
         st.write("")
         df_del = pd.DataFrame(deleted_list)
+        if "rider_code" in df_del.columns:
+            df_del["rider_code"] = df_del["rider_code"].apply(clean_code)
         cols_del = [
             "id",
             "rider_code",
@@ -1014,7 +1017,6 @@ elif menu == "📜 سجل التوريدات الشهرية":
     else:
         st.info("سجل المحذوفات فارغ، لم يتم حذف أي حركات مؤخراً.")
 
-    # --- قسم مسح كافة التوريدات ---
     st.divider()
     with st.expander("⚠️ منطقة الخطر: مسح كافة التوريدات النشطة"):
         st.warning("تحذير: سيقوم هذا الخيار بنقل جميع التوريدات النشطة إلى جدول الأرشيف.")
@@ -1038,7 +1040,7 @@ elif menu == "📜 سجل التوريدات الشهرية":
                             for p in payments_list:
                                 records_to_archive.append({
                                     "original_id": p.get("id"),
-                                    "rider_code": p.get("rider_code", ""),
+                                    "rider_code": clean_code(p.get("rider_code")),
                                     "rider_name": p.get("rider_name", ""),
                                     "amount": p.get("amount", 0.0),
                                     "date": str(p.get("date", "")),
@@ -1138,7 +1140,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 df_sal[selected_sal_col].astype(str).str.replace(",", "").str.strip(), errors="coerce"
             ).fillna(0)
 
-            df_sal["Code_Clean"] = df_sal[selected_code_col].astype(str).str.strip()
+            df_sal["Code_Clean"] = df_sal[selected_code_col].apply(clean_code)
             df_sal["Name_Clean"] = df_sal[selected_name_col].astype(str).str.strip()
 
             if selected_date_col != "بدون تحديد / شهر واحد":
@@ -1204,6 +1206,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
                     "Salary_Clean": "إجمالي المرتب المستحق",
                 }
             )
+            final_sal_table["كود المندوب"] = final_sal_table["كود المندوب"].apply(clean_code)
             final_sal_table = final_sal_table.sort_values(by="اسم المندوب")
             st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
 
@@ -1218,6 +1221,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
                     "Salary_Clean": "إجمالي المرتب المستحق",
                 }
             )
+            final_sal_table["كود المندوب"] = final_sal_table["كود المندوب"].apply(clean_code)
             final_sal_table = final_sal_table.sort_values(by="إجمالي المرتب المستحق", ascending=False)
             st.dataframe(final_sal_table, use_container_width=True, hide_index=True)
 
