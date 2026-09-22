@@ -289,193 +289,195 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 st.success("✅ تم مسح شيت الداشبورد!")
                 st.rerun()
 
-    df_dash_raw = None
-    if dash_file:
-        try:
-            df_dash_raw = (
-                pd.read_csv(dash_file)
-                if dash_file.name.endswith(".csv")
-                else pd.read_excel(dash_file)
-            )
-            dash_cols = df_dash_raw.columns.tolist()
-
-            id_col = next(
-                (c for c in dash_cols if "id" in str(c).lower() or "كود" in str(c).lower()),
-                dash_cols[0],
-            )
-            name_col_dash = next(
-                (c for c in dash_cols if "name" in str(c).lower() or "اسم" in str(c).lower()),
-                dash_cols[1] if len(dash_cols) > 1 else dash_cols[0],
-            )
-            cod_col = next(
-                (c for c in dash_cols if any(k in str(c).lower() for k in ["cod", "balance", "عهدة", "عجز", "مستحق", "amount"])),
-                dash_cols[-1],
-            )
-            status_col = next(
-                (c for c in dash_cols if "status" in str(c).lower() or "حالة" in str(c).lower()),
-                None,
-            )
-            vendor_col = next(
-                (c for c in dash_cols if "vendor" in str(c).lower() or "شركة" in str(c).lower()),
-                None,
-            )
-
-            save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
-            st.success("✅ تم استبدال وحفظ الداشبورد السحابي بنجاح!")
-        except Exception as e:
-            st.error(f"خطأ في قراءة الملف: {e}")
-    else:
-        saved_dash = get_dashboard_data()
-        if saved_dash:
-            df_dash_raw = pd.DataFrame(saved_dash)
-            id_col = "rider_code"
-            name_col_dash = "rider_name"
-            cod_col = "amount"
-            status_col = "status"
-            vendor_col = None
-
-    if df_dash_raw is not None and not df_dash_raw.empty:
-        try:
-            df_dash = df_dash_raw.dropna(subset=[name_col_dash]).copy()
-            df_dash["Name_Clean"] = df_dash[name_col_dash].apply(clean_text)
-            df_dash["Code_Clean"] = df_dash[id_col].astype(str).str.strip()
-            df_dash["COD_Balance"] = pd.to_numeric(
-                df_dash[cod_col], errors="coerce"
-            ).fillna(0)
-
-            for _, r_item in df_dash.iterrows():
-                auto_register_rider(r_item[id_col], r_item[name_col_dash])
-
-            # 1) جلب التوريدات المسجلة
-            payments_list = get_payments()
-            if payments_list:
-                df_pay_db = pd.DataFrame(payments_list)
-                df_pay_db["Name_Clean"] = df_pay_db["rider_name"].apply(clean_text)
-                pay_sum = (
-                    df_pay_db.groupby("Name_Clean")["amount"].sum().reset_index()
+    # استخدام st.spinner لإظهار مؤشر التحميل للفريق أثناء معالجة البيانات وجلب السحابة
+    with st.spinner("⏳ 👨🏻‍🦯🏃🏻 جاري تحميل البيانات أستنو شوية  ..."):
+        df_dash_raw = None
+        if dash_file:
+            try:
+                df_dash_raw = (
+                    pd.read_csv(dash_file)
+                    if dash_file.name.endswith(".csv")
+                    else pd.read_excel(dash_file)
                 )
-            else:
-                pay_sum = pd.DataFrame(columns=["Name_Clean", "amount"])
+                dash_cols = df_dash_raw.columns.tolist()
 
-            merged = pd.merge(
-                df_dash,
-                pay_sum.rename(columns={"amount": "Total_Paid"}),
-                on="Name_Clean",
-                how="left",
-            )
-            merged["Total_Paid"] = merged["Total_Paid"].fillna(0)
-            merged["Remaining_Balance"] = (
-                merged["COD_Balance"] - merged["Total_Paid"]
-            )
+                id_col = next(
+                    (c for c in dash_cols if "id" in str(c).lower() or "كود" in str(c).lower()),
+                    dash_cols[0],
+                )
+                name_col_dash = next(
+                    (c for c in dash_cols if "name" in str(c).lower() or "اسم" in str(c).lower()),
+                    dash_cols[1] if len(dash_cols) > 1 else dash_cols[0],
+                )
+                cod_col = next(
+                    (c for c in dash_cols if any(k in str(c).lower() for k in ["cod", "balance", "عهدة", "عجز", "مستحق", "amount"])),
+                    dash_cols[-1],
+                )
+                status_col = next(
+                    (c for c in dash_cols if "status" in str(c).lower() or "حالة" in str(c).lower()),
+                    None,
+                )
+                vendor_col = next(
+                    (c for c in dash_cols if "vendor" in str(c).lower() or "شركة" in str(c).lower()),
+                    None,
+                )
 
-            # 2) جلب أرقام الهواتف من قاعدة بيانات المناديب
-            riders_db = get_riders()
-            if riders_db:
-                df_riders_db = pd.DataFrame(riders_db)
-                df_riders_db["Code_Clean"] = df_riders_db.get("code", pd.Series([""]*len(df_riders_db))).astype(str).str.strip()
-                df_riders_db["Name_Clean"] = df_riders_db.get("name", pd.Series([""]*len(df_riders_db))).apply(clean_text)
+                save_dashboard_data(df_dash_raw, id_col, name_col_dash, cod_col, status_col, vendor_col)
+                st.success("✅ تم استبدال وحفظ الداشبورد السحابي بنجاح!")
+            except Exception as e:
+                st.error(f"خطأ في قراءة الملف: {e}")
+        else:
+            saved_dash = get_dashboard_data()
+            if saved_dash:
+                df_dash_raw = pd.DataFrame(saved_dash)
+                id_col = "rider_code"
+                name_col_dash = "rider_name"
+                cod_col = "amount"
+                status_col = "status"
+                vendor_col = None
+
+        if df_dash_raw is not None and not df_dash_raw.empty:
+            try:
+                df_dash = df_dash_raw.dropna(subset=[name_col_dash]).copy()
+                df_dash["Name_Clean"] = df_dash[name_col_dash].apply(clean_text)
+                df_dash["Code_Clean"] = df_dash[id_col].astype(str).str.strip()
+                df_dash["COD_Balance"] = pd.to_numeric(
+                    df_dash[cod_col], errors="coerce"
+                ).fillna(0)
+
+                for _, r_item in df_dash.iterrows():
+                    auto_register_rider(r_item[id_col], r_item[name_col_dash])
+
+                # 1) جلب التوريدات المسجلة
+                payments_list = get_payments()
+                if payments_list:
+                    df_pay_db = pd.DataFrame(payments_list)
+                    df_pay_db["Name_Clean"] = df_pay_db["rider_name"].apply(clean_text)
+                    pay_sum = (
+                        df_pay_db.groupby("Name_Clean")["amount"].sum().reset_index()
+                    )
+                else:
+                    pay_sum = pd.DataFrame(columns=["Name_Clean", "amount"])
+
+                merged = pd.merge(
+                    df_dash,
+                    pay_sum.rename(columns={"amount": "Total_Paid"}),
+                    on="Name_Clean",
+                    how="left",
+                )
+                merged["Total_Paid"] = merged["Total_Paid"].fillna(0)
+                merged["Remaining_Balance"] = (
+                    merged["COD_Balance"] - merged["Total_Paid"]
+                )
+
+                # 2) جلب أرقام الهواتف من قاعدة بيانات المناديب
+                riders_db = get_riders()
+                if riders_db:
+                    df_riders_db = pd.DataFrame(riders_db)
+                    df_riders_db["Code_Clean"] = df_riders_db.get("code", pd.Series([""]*len(df_riders_db))).astype(str).str.strip()
+                    df_riders_db["Name_Clean"] = df_riders_db.get("name", pd.Series([""]*len(df_riders_db))).apply(clean_text)
+                    
+                    if "phone" in df_riders_db.columns:
+                        df_riders_db["Phone_Val"] = df_riders_db["phone"].astype(str).str.strip()
+                    else:
+                        df_riders_db["Phone_Val"] = "غير مسجل"
+
+                    phone_map_code = df_riders_db[df_riders_db["Code_Clean"] != ""].set_index("Code_Clean")["Phone_Val"].to_dict()
+                    phone_map_name = df_riders_db[df_riders_db["Name_Clean"] != ""].set_index("Name_Clean")["Phone_Val"].to_dict()
+
+                    merged["رقم الموبايل"] = merged["Code_Clean"].map(phone_map_code)
+                    merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna(merged["Name_Clean"].map(phone_map_name))
+                    merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna("غير مسجل")
+                else:
+                    merged["رقم الموبايل"] = "غير مسجل"
+
+                # 3) جلب إجمالي المرتب من آخر شيت مرتبات محفوظ
+                salaries_db = get_salaries_data()
+                if salaries_db:
+                    df_sal_db = pd.DataFrame(salaries_db)
+                    df_sal_db["Code_Clean"] = df_sal_db.get("rider_code", pd.Series([""]*len(df_sal_db))).astype(str).str.strip()
+                    df_sal_db["Name_Clean"] = df_sal_db.get("rider_name", pd.Series([""]*len(df_sal_db))).apply(clean_text)
+                    df_sal_db["Salary_Val"] = pd.to_numeric(df_sal_db.get("amount", pd.Series([0]*len(df_sal_db))), errors="coerce").fillna(0)
+
+                    sal_sum_code = df_sal_db[df_sal_db["Code_Clean"] != ""].groupby("Code_Clean")["Salary_Val"].sum().to_dict()
+                    sal_sum_name = df_sal_db[df_sal_db["Name_Clean"] != ""].groupby("Name_Clean")["Salary_Val"].sum().to_dict()
+
+                    merged["إجمالي المرتب"] = merged["Code_Clean"].map(sal_sum_code)
+                    merged["إجمالي المرتب"] = merged["إجمالي المرتب"].fillna(merged["Name_Clean"].map(sal_sum_name))
+                    merged["إجمالي المرتب"] = merged["إجمالي المرتب"].fillna(0)
+                else:
+                    merged["إجمالي المرتب"] = 0
+
+                def categorize(row):
+                    cod = row["COD_Balance"]
+                    paid = row["Total_Paid"]
+                    rem = row["Remaining_Balance"]
+                    status = str(row[status_col]).lower() if status_col and status_col in row else ""
+
+                    if status == "left" and rem > 0:
+                        return "⚠️ مغادر وعليه مديونية"
+                    elif rem <= 0 and cod > 0:
+                        return "🟢 تم التسوية بالكامل"
+                    elif paid > 0 and rem > 0:
+                        return "🟡 توريد جزئي (متبقي فلوس)"
+                    elif cod > 0 and paid == 0:
+                        return "🔴 لم يورد إطلاقاً"
+                    else:
+                        return "⚪ لا يوجد عليه عهدة"
+
+                merged["الحالة المالية"] = merged.apply(categorize, axis=1)
+
+                st.markdown(
+                    "<div class='section-title'>📈 ملخص موقف العهد والتوريدات</div>",
+                    unsafe_allow_html=True,
+                )
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric(
+                    "إجمالي عهدة الداشبورد", f"{int(merged['COD_Balance'].sum()):,} ج.م"
+                )
+                c2.metric(
+                    "إجمالي التوريدات المسجلة", f"{int(merged['Total_Paid'].sum()):,} ج.m"
+                )
+                c3.metric(
+                    "الصافي المطلوب تحصيله",
+                    f"{int(merged['Remaining_Balance'].sum()):,} ج.م",
+                )
+                c4.metric(
+                    "مناديب مغادرين بمديونية",
+                    f"{merged[merged['الحالة المالية'] == '⚠️ مغادر وعليه مديونية'].shape[0]} مندوب",
+                )
+
+                st.divider()
+
+                display_cols = [id_col, name_col_dash, "رقم الموبايل"]
+                if status_col and status_col in merged.columns:
+                    display_cols.append(status_col)
+                if vendor_col and vendor_col in merged.columns:
+                    display_cols.append(vendor_col)
                 
-                if "phone" in df_riders_db.columns:
-                    df_riders_db["Phone_Val"] = df_riders_db["phone"].astype(str).str.strip()
-                else:
-                    df_riders_db["Phone_Val"] = "غير مسجل"
+                display_cols.extend(
+                    ["COD_Balance", "Total_Paid", "Remaining_Balance", "إجمالي المرتب", "الحالة المالية"]
+                )
 
-                phone_map_code = df_riders_db[df_riders_db["Code_Clean"] != ""].set_index("Code_Clean")["Phone_Val"].to_dict()
-                phone_map_name = df_riders_db[df_riders_db["Name_Clean"] != ""].set_index("Name_Clean")["Phone_Val"].to_dict()
+                final_table = merged[display_cols].copy()
+                final_table.rename(
+                    columns={
+                        id_col: "كود المندوب",
+                        name_col_dash: "اسم المندوب",
+                        "COD_Balance": "عهدة الداشبورد",
+                        "Total_Paid": "إجمالي المورد هذا الشهر",
+                        "Remaining_Balance": "المتبقي الفعلي",
+                    },
+                    inplace=True,
+                )
 
-                merged["رقم الموبايل"] = merged["Code_Clean"].map(phone_map_code)
-                merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna(merged["Name_Clean"].map(phone_map_name))
-                merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna("غير مسجل")
-            else:
-                merged["رقم الموبايل"] = "غير مسجل"
-
-            # 3) جلب إجمالي المرتب من آخر شيت مرتبات محفوظ
-            salaries_db = get_salaries_data()
-            if salaries_db:
-                df_sal_db = pd.DataFrame(salaries_db)
-                df_sal_db["Code_Clean"] = df_sal_db.get("rider_code", pd.Series([""]*len(df_sal_db))).astype(str).str.strip()
-                df_sal_db["Name_Clean"] = df_sal_db.get("rider_name", pd.Series([""]*len(df_sal_db))).apply(clean_text)
-                df_sal_db["Salary_Val"] = pd.to_numeric(df_sal_db.get("amount", pd.Series([0]*len(df_sal_db))), errors="coerce").fillna(0)
-
-                sal_sum_code = df_sal_db[df_sal_db["Code_Clean"] != ""].groupby("Code_Clean")["Salary_Val"].sum().to_dict()
-                sal_sum_name = df_sal_db[df_sal_db["Name_Clean"] != ""].groupby("Name_Clean")["Salary_Val"].sum().to_dict()
-
-                merged["إجمالي المرتب"] = merged["Code_Clean"].map(sal_sum_code)
-                merged["إجمالي المرتب"] = merged["إجمالي المرتب"].fillna(merged["Name_Clean"].map(sal_sum_name))
-                merged["إجمالي المرتب"] = merged["إجمالي المرتب"].fillna(0)
-            else:
-                merged["إجمالي المرتب"] = 0
-
-            def categorize(row):
-                cod = row["COD_Balance"]
-                paid = row["Total_Paid"]
-                rem = row["Remaining_Balance"]
-                status = str(row[status_col]).lower() if status_col and status_col in row else ""
-
-                if status == "left" and rem > 0:
-                    return "⚠️ مغادر وعليه مديونية"
-                elif rem <= 0 and cod > 0:
-                    return "🟢 تم التسوية بالكامل"
-                elif paid > 0 and rem > 0:
-                    return "🟡 توريد جزئي (متبقي فلوس)"
-                elif cod > 0 and paid == 0:
-                    return "🔴 لم يورد إطلاقاً"
-                else:
-                    return "⚪ لا يوجد عليه عهدة"
-
-            merged["الحالة المالية"] = merged.apply(categorize, axis=1)
-
-            st.markdown(
-                "<div class='section-title'>📈 ملخص موقف العهد والتوريدات</div>",
-                unsafe_allow_html=True,
-            )
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric(
-                "إجمالي عهدة الداشبورد", f"{int(merged['COD_Balance'].sum()):,} ج.م"
-            )
-            c2.metric(
-                "إجمالي التوريدات المسجلة", f"{int(merged['Total_Paid'].sum()):,} ج.م"
-            )
-            c3.metric(
-                "الصافي المطلوب تحصيله",
-                f"{int(merged['Remaining_Balance'].sum()):,} ج.م",
-            )
-            c4.metric(
-                "مناديب مغادرين بمديونية",
-                f"{merged[merged['الحالة المالية'] == '⚠️ مغادر وعليه مديونية'].shape[0]} مندوب",
-            )
-
-            st.divider()
-
-            display_cols = [id_col, name_col_dash, "رقم الموبايل"]
-            if status_col and status_col in merged.columns:
-                display_cols.append(status_col)
-            if vendor_col and vendor_col in merged.columns:
-                display_cols.append(vendor_col)
-            
-            display_cols.extend(
-                ["COD_Balance", "Total_Paid", "Remaining_Balance", "إجمالي المرتب", "الحالة المالية"]
-            )
-
-            final_table = merged[display_cols].copy()
-            final_table.rename(
-                columns={
-                    id_col: "كود المندوب",
-                    name_col_dash: "اسم المندوب",
-                    "COD_Balance": "عهدة الداشبورد",
-                    "Total_Paid": "إجمالي المورد هذا الشهر",
-                    "Remaining_Balance": "المتبقي الفعلي",
-                },
-                inplace=True,
-            )
-
-            st.dataframe(
-                final_table.sort_values(by="المتبقي الفعلي", ascending=False),
-                use_container_width=True,
-                hide_index=True,
-            )
-        except Exception as e:
-            st.error(f"خطأ في معالجة البيانات: {e}")
+                st.dataframe(
+                    final_table.sort_values(by="المتبقي الفعلي", ascending=False),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            except Exception as e:
+                st.error(f"خطأ في معالجة البيانات: {e}")
 
 # ==========================================
 # الشاشة الثانية: تسجيل توريد يومي
