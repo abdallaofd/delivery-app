@@ -157,6 +157,11 @@ st.markdown(
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
     
+    /* إخفاء القائمة العلوية والشريط وزر Fork و GitHub */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
     html, body, [class*="css"] {
         font-family: 'Cairo', sans-serif;
         direction: rtl;
