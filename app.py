@@ -75,7 +75,11 @@ def auto_register_rider(code, name, phone=""):
         r_c = clean_code(r.get("code"))
         r_n = clean_text(r.get("name"))
         
-        if (clean_c and r_c == clean_c) or (clean_n and r_n == clean_n):
+        # البحث بالأولوية للكود أولاً ثم الاسم
+        if clean_c and r_c == clean_c:
+            found_rider = r
+            break
+        elif not clean_c and clean_n and r_n == clean_n:
             found_rider = r
             break
 
@@ -87,11 +91,19 @@ def auto_register_rider(code, name, phone=""):
         except Exception:
             pass
     else:
-        # إذا كان المندوب موجوداً ولكن ليس لديه رقم موبايل، وتوفر رقم جديد يتم تحديثه
+        # تحديث الكود أو الموبايل إن وُجِدا ولم يكونا مسجلين سابقاً
+        existing_code = clean_code(found_rider.get("code"))
         existing_phone = clean_code(found_rider.get("phone"))
+        
+        updates = {}
+        if not existing_code and clean_c:
+            updates["code"] = clean_c
         if (not existing_phone or existing_phone == "0") and clean_p and clean_p != "0":
+            updates["phone"] = clean_p
+            
+        if updates:
             try:
-                supabase.table("riders").update({"phone": clean_p}).eq("id", found_rider.get("id")).execute()
+                supabase.table("riders").update(updates).eq("id", found_rider.get("id")).execute()
             except Exception:
                 pass
 
@@ -179,14 +191,22 @@ st.markdown(
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
     
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
+    /* إخفاء القوائم والأيقونات السفلية والعلوية تماماً */
+    #MainMenu {visibility: hidden !important;}
+    header {visibility: hidden !important;}
+    footer {visibility: hidden !important;}
     
     [data-testid="stStatusWidget"] {display: none !important;}
     .stAppDeployButton {display: none !important;}
     div[class*="stAppViewer"] > footer {display: none !important;}
     div[data-testid="stToolbar"] {display: none !important;}
+    
+    /* إخفاء الأيقونات العائمة بالأسفل اليمين/اليسار */
+    div[class*="viewerBadge"] {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    button[title="View source"] {display: none !important;}
+    .stApp > footer {display: none !important;}
+    #root > div:nth-child(1) > div > div > div > div > section > div {padding-bottom: 0px;}
     
     html, body, [class*="css"] {
         font-family: 'Cairo', sans-serif;
@@ -378,24 +398,29 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 if payments_list:
                     df_pay_db = pd.DataFrame(payments_list)
                     df_pay_db["Name_Clean"] = df_pay_db["rider_name"].apply(clean_text)
-                    pay_sum = (
-                        df_pay_db.groupby("Name_Clean")["amount"].sum().reset_index()
-                    )
-                else:
-                    pay_sum = pd.DataFrame(columns=["Name_Clean", "amount"])
+                    df_pay_db["Code_Clean"] = df_pay_db.get("rider_code", pd.Series([""]*len(df_pay_db))).apply(clean_code)
+                    
+                    # تجميع المبالغ بواسطة الاسم والكود معاً لمنع تكرار الأسماء المتشابهة
+                    pay_sum_name = df_pay_db.groupby("Name_Clean")["amount"].sum().to_dict()
+                    pay_sum_code = df_pay_db[df_pay_db["Code_Clean"] != ""].groupby("Code_Clean")["amount"].sum().to_dict()
 
-                merged = pd.merge(
-                    df_dash,
-                    pay_sum.rename(columns={"amount": "Total_Paid"}),
-                    on="Name_Clean",
-                    how="left",
-                )
-                merged["Total_Paid"] = merged["Total_Paid"].fillna(0)
+                    def calculate_paid(row):
+                        c = row["Code_Clean"]
+                        n = row["Name_Clean"]
+                        if c in pay_sum_code:
+                            return pay_sum_code[c]
+                        return pay_sum_name.get(n, 0.0)
+
+                    df_dash["Total_Paid"] = df_dash.apply(calculate_paid, axis=1)
+                else:
+                    df_dash["Total_Paid"] = 0.0
+
+                merged = df_dash.copy()
                 merged["Remaining_Balance"] = (
                     merged["COD_Balance"] - merged["Total_Paid"]
                 )
 
-                # 2) جلب أرقام الهواتف من قاعدة بيانات المناديب
+                # 2) جلب أرقام الهواتف والأكواد من قاعدة بيانات المناديب
                 riders_db = get_riders()
                 if riders_db:
                     df_riders_db = pd.DataFrame(riders_db)
@@ -407,9 +432,15 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                     else:
                         df_riders_db["Phone_Val"] = ""
 
-                    # خريطة البحث بالكود وبالاسم
                     phone_map_code = df_riders_db[df_riders_db["Code_Clean"] != ""].set_index("Code_Clean")["Phone_Val"].to_dict()
                     phone_map_name = df_riders_db[df_riders_db["Name_Clean"] != ""].set_index("Name_Clean")["Phone_Val"].to_dict()
+
+                    code_map_name = df_riders_db[df_riders_db["Name_Clean"] != ""].set_index("Name_Clean")["Code_Clean"].to_dict()
+
+                    # استكمال الأكواد الفارغة إن وُجدت
+                    merged["Code_Clean"] = merged.apply(
+                        lambda r: r["Code_Clean"] if r["Code_Clean"] else code_map_name.get(r["Name_Clean"], ""), axis=1
+                    )
 
                     merged["رقم الموبايل"] = merged["Code_Clean"].map(phone_map_code)
                     merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna(merged["Name_Clean"].map(phone_map_name))
@@ -474,6 +505,8 @@ if menu == "📊 مطابقة الداشبورد اليومية":
                 )
 
                 st.divider()
+
+                merged[id_col] = merged["Code_Clean"]
 
                 display_cols = [id_col, name_col_dash, "رقم الموبايل"]
                 if status_col and status_col in merged.columns:
