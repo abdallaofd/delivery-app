@@ -112,77 +112,12 @@ def get_salaries_data():
         return []
 
 
-# ---- دوال الشاشة (بيانات الموظفين والمناديب employees_data) ----
-def get_employees_data():
-    try:
-        res = supabase.table("employees_data").select("*").order("id", desc=False).execute()
-        return res.data if res.data else []
-    except Exception:
-        return []
-
-
-def save_employee_data(emp_dict):
-    try:
-        supabase.table("employees_data").insert(emp_dict).execute()
-        return True, ""
-    except Exception as e:
-        if "national_id" in emp_dict:
-            try:
-                backup_dict = emp_dict.copy()
-                del backup_dict["national_id"]
-                supabase.table("employees_data").insert(backup_dict).execute()
-                return True, "تم الحفظ ولكن يرجى إضافة عمود national_id في Supabase لحفظ الرقم القومي."
-            except Exception as ex:
-                return False, str(ex)
-        return False, str(e)
-
-
-def update_employee_data(emp_id, emp_dict):
-    try:
-        supabase.table("employees_data").update(emp_dict).eq("id", emp_id).execute()
-        return True, ""
-    except Exception as e:
-        if "national_id" in emp_dict:
-            try:
-                backup_dict = emp_dict.copy()
-                del backup_dict["national_id"]
-                supabase.table("employees_data").update(backup_dict).eq("id", emp_id).execute()
-                return True, "تم التعديل ولكن لم يتم تحديث الرقم القومي للعدم وجود العامود في Supabase."
-            except Exception as ex:
-                return False, str(ex)
-        return False, str(e)
-
-
-def save_employees_batch(records_list):
-    try:
-        supabase.table("employees_data").insert(records_list).execute()
-        return True, ""
-    except Exception as e:
-        try:
-            backup_records = []
-            for rec in records_list:
-                r_copy = rec.copy()
-                r_copy.pop("national_id", None)
-                backup_records.append(r_copy)
-            supabase.table("employees_data").insert(backup_records).execute()
-            return True, "تم الحفظ بنجاح، لكن يرجى إضافة عمود national_id في Supabase لتخزين الرقم القومي مستقبلاً."
-        except Exception as ex:
-            return False, str(ex)
-
-
-def delete_employee_by_id(emp_id):
-    try:
-        supabase.table("employees_data").delete().eq("id", emp_id).execute()
-        return True
-    except Exception:
-        return False
-
-
-def auto_register_rider(code, name):
+def auto_register_rider(code, name, phone=""):
     if not name or str(name).strip() == "":
         return
     code_str = str(code).strip() if pd.notna(code) else ""
     name_str = str(name).strip()
+    phone_str = str(phone).strip() if pd.notna(phone) else ""
 
     existing_riders = get_riders()
     exists = any(
@@ -193,7 +128,7 @@ def auto_register_rider(code, name):
     if not exists:
         try:
             supabase.table("riders").insert(
-                {"code": code_str, "name": name_str}
+                {"code": code_str, "name": name_str, "phone": phone_str}
             ).execute()
         except Exception:
             pass
@@ -316,7 +251,6 @@ menu = st.sidebar.radio(
         "📊 مطابقة الداشبورد اليومية",
         "➕ إضافة / تسجيل توريد يومي",
         "👥 إدارة أسماء المناديب",
-        "📝 بيانات الموظفين والمناديب",
         "📜 سجل التوريدات الشهرية",
         "💰 تجميع مرتبات المناديب",
     ],
@@ -399,6 +333,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
         try:
             df_dash = df_dash_raw.dropna(subset=[name_col_dash]).copy()
             df_dash["Name_Clean"] = df_dash[name_col_dash].apply(clean_text)
+            df_dash["Code_Clean"] = df_dash[id_col].astype(str).str.strip()
             df_dash["COD_Balance"] = pd.to_numeric(
                 df_dash[cod_col], errors="coerce"
             ).fillna(0)
@@ -406,6 +341,7 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             for _, r_item in df_dash.iterrows():
                 auto_register_rider(r_item[id_col], r_item[name_col_dash])
 
+            # 1) جلب التوريدات المسجلة
             payments_list = get_payments()
             if payments_list:
                 df_pay_db = pd.DataFrame(payments_list)
@@ -426,6 +362,44 @@ if menu == "📊 مطابقة الداشبورد اليومية":
             merged["Remaining_Balance"] = (
                 merged["COD_Balance"] - merged["Total_Paid"]
             )
+
+            # 2) جلب أرقام الهواتف من قاعدة بيانات المناديب
+            riders_db = get_riders()
+            if riders_db:
+                df_riders_db = pd.DataFrame(riders_db)
+                df_riders_db["Code_Clean"] = df_riders_db.get("code", pd.Series([""]*len(df_riders_db))).astype(str).str.strip()
+                df_riders_db["Name_Clean"] = df_riders_db.get("name", pd.Series([""]*len(df_riders_db))).apply(clean_text)
+                
+                if "phone" in df_riders_db.columns:
+                    df_riders_db["Phone_Val"] = df_riders_db["phone"].astype(str).str.strip()
+                else:
+                    df_riders_db["Phone_Val"] = "غير مسجل"
+
+                phone_map_code = df_riders_db[df_riders_db["Code_Clean"] != ""].set_index("Code_Clean")["Phone_Val"].to_dict()
+                phone_map_name = df_riders_db[df_riders_db["Name_Clean"] != ""].set_index("Name_Clean")["Phone_Val"].to_dict()
+
+                merged["رقم الموبايل"] = merged["Code_Clean"].map(phone_map_code)
+                merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna(merged["Name_Clean"].map(phone_map_name))
+                merged["رقم الموبايل"] = merged["رقم الموبايل"].fillna("غير مسجل")
+            else:
+                merged["رقم الموبايل"] = "غير مسجل"
+
+            # 3) جلب إجمالي المرتب من آخر شيت مرتبات محفوظ
+            salaries_db = get_salaries_data()
+            if salaries_db:
+                df_sal_db = pd.DataFrame(salaries_db)
+                df_sal_db["Code_Clean"] = df_sal_db.get("rider_code", pd.Series([""]*len(df_sal_db))).astype(str).str.strip()
+                df_sal_db["Name_Clean"] = df_sal_db.get("rider_name", pd.Series([""]*len(df_sal_db))).apply(clean_text)
+                df_sal_db["Salary_Val"] = pd.to_numeric(df_sal_db.get("amount", pd.Series([0]*len(df_sal_db))), errors="coerce").fillna(0)
+
+                sal_sum_code = df_sal_db[df_sal_db["Code_Clean"] != ""].groupby("Code_Clean")["Salary_Val"].sum().to_dict()
+                sal_sum_name = df_sal_db[df_sal_db["Name_Clean"] != ""].groupby("Name_Clean")["Salary_Val"].sum().to_dict()
+
+                merged["إجمالي المرتب"] = merged["Code_Clean"].map(sal_sum_code)
+                merged["إجمالي المرتب"] = merged["إجمالي المرتب"].fillna(merged["Name_Clean"].map(sal_sum_name))
+                merged["إجمالي المرتب"] = merged["إجمالي المرتب"].fillna(0)
+            else:
+                merged["إجمالي المرتب"] = 0
 
             def categorize(row):
                 cod = row["COD_Balance"]
@@ -468,13 +442,14 @@ if menu == "📊 مطابقة الداشبورد اليومية":
 
             st.divider()
 
-            display_cols = [id_col, name_col_dash]
+            display_cols = [id_col, name_col_dash, "رقم الموبايل"]
             if status_col and status_col in merged.columns:
                 display_cols.append(status_col)
             if vendor_col and vendor_col in merged.columns:
                 display_cols.append(vendor_col)
+            
             display_cols.extend(
-                ["COD_Balance", "Total_Paid", "Remaining_Balance", "الحالة المالية"]
+                ["COD_Balance", "Total_Paid", "Remaining_Balance", "إجمالي المرتب", "الحالة المالية"]
             )
 
             final_table = merged[display_cols].copy()
@@ -522,23 +497,23 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 
         if not riders_data:
             st.warning("⚠️ لا يوجد مناديب مسجلين.")
-            rider_code_input = st.text_input("كود المندوب:")
-            rider_name_input = st.text_input("اسم المندوب:")
+            rider_code_input = st.text_input("كود المندوب:", key="single_pay_code")
+            rider_name_input = st.text_input("اسم المندوب:", key="single_pay_name")
             selected_rider_name = rider_name_input
             selected_rider_code = rider_code_input
         else:
             rider_options = {
-                f"{r.get('code', '')} - {r['name']}": r for r in riders_data
+                f"{r.get('code', '')} - {r['name']}": r for r in riders_data if "name" in r
             }
-            choice = st.selectbox("اختر المندوب:", list(rider_options.keys()))
+            choice = st.selectbox("اختر المندوب:", list(rider_options.keys()), key="single_pay_select")
             selected_rider_name = rider_options[choice]["name"]
             selected_rider_code = rider_options[choice].get("code", "")
 
-        pay_date = st.date_input("تاريخ التوريد:")
-        amount = st.number_input("المبلغ المورد (ج.م):", min_value=0, step=50)
-        notes = st.text_input("ملاحظات / رقم الإيصال:")
+        pay_date = st.date_input("تاريخ التوريد:", key="single_pay_date")
+        amount = st.number_input("المبلغ المورد (ج.م):", min_value=0, step=50, key="single_pay_amount")
+        notes = st.text_input("ملاحظات / رقم الإيصال:", key="single_pay_notes")
 
-        if st.button("💾 حفظ التوريد في السحابة", type="primary"):
+        if st.button("💾 حفظ التوريد في السحابة", type="primary", key="btn_save_single_pay"):
             if selected_rider_name and amount > 0:
                 with st.spinner("جاري إرسال الحفظ للسحابة..."):
                     auto_register_rider(selected_rider_code, selected_rider_name)
@@ -573,7 +548,7 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
         )
 
         if batch_file:
-            if st.button("📥 رفع وسحب البيانات للسحابة", type="primary"):
+            if st.button("📥 رفع وسحب البيانات للسحابة", type="primary", key="btn_upload_batch"):
                 try:
                     df_b = (
                         pd.read_csv(batch_file)
@@ -673,9 +648,9 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 
                     if new_payments:
                         existing_riders = get_riders()
-                        existing_names = {r.get("name") for r in existing_riders}
+                        existing_names = {r.get("name") for r in existing_riders if "name" in r}
                         riders_to_insert = [
-                            {"code": code, "name": name}
+                            {"code": code, "name": name, "phone": ""}
                             for name, code in new_riders.items()
                             if name not in existing_names
                         ]
@@ -698,8 +673,8 @@ elif menu == "👥 إدارة أسماء المناديب":
     st.markdown(
         """
     <div class="main-header">
-        <h1>👥 إدارة بيانات المناديب (سحابياً)</h1>
-        <p>عرض، إضافة، وحذف المناديب مع وجود أرشيف كامل للمحذوفات</p>
+        <h1>👥 إدارة قاعدة بيانات المناديب (سحابياً)</h1>
+        <p>إضافة، رفع شيت المناديب، تحديث الموبايل، وحذف المناديب مع الأرشيف</p>
     </div>
     """,
         unsafe_allow_html=True,
@@ -708,12 +683,13 @@ elif menu == "👥 إدارة أسماء المناديب":
     col_r1, col_r2 = st.columns(2)
 
     with col_r1:
-        st.markdown("<div class='section-title'>➕ إضافة مندوب جديد</div>", unsafe_allow_html=True)
-        r_code = st.text_input("كود المندوب (ID):")
-        r_name = st.text_input("اسم المندوب بالكامل:")
-        if st.button("إضافة المندوب للسحابة", type="primary"):
+        st.markdown("<div class='section-title'>➕ إضافة مندوب جديد فردياً</div>", unsafe_allow_html=True)
+        r_code = st.text_input("كود المندوب (ID):", key="add_rider_code")
+        r_name = st.text_input("اسم المندوب بالكامل:", key="add_rider_name")
+        r_phone = st.text_input("رقم الموبايل:", key="add_rider_phone")
+        if st.button("إضافة المندوب للسحابة", type="primary", key="btn_add_rider"):
             if r_name:
-                auto_register_rider(r_code, r_name)
+                auto_register_rider(r_code, r_name, r_phone)
                 st.toast("✅ تم تسجيل المندوب بنجاح!", icon="👤")
                 st.success("تمت إضافة المندوب بنجاح!")
                 st.rerun()
@@ -721,333 +697,147 @@ elif menu == "👥 إدارة أسماء المناديب":
                 st.error("يرجى إدخال اسم المندوب على الأقل.")
 
     with col_r2:
+        st.markdown("<div class='section-title'>📤 رفع شيت قاعدة بيانات المناديب</div>", unsafe_allow_html=True)
+        riders_file = st.file_uploader("ارفع شيت المناديب (Excel/CSV):", type=["xlsx", "xls", "csv"], key="riders_bulk")
+        if riders_file:
+            if st.button("📥 رفع وحفظ بيانات المناديب", type="primary", key="btn_upload_riders"):
+                try:
+                    df_rf = pd.read_csv(riders_file) if riders_file.name.endswith(".csv") else pd.read_excel(riders_file)
+                    rf_cols = df_rf.columns.tolist()
+
+                    code_col_r = next((c for c in rf_cols if any(k in str(c).lower() for k in ["code", "id", "كود"])), rf_cols[0])
+                    name_col_r = next((c for c in rf_cols if any(k in str(c).lower() for k in ["name", "اسم", "rider", "طيار"])), rf_cols[1] if len(rf_cols) > 1 else rf_cols[0])
+                    phone_col_r = next((c for c in rf_cols if any(k in str(c).lower() for k in ["phone", "mobile", "موبايل", "هاتف", "تليفون"])), None)
+
+                    existing_list = get_riders()
+                    existing_names = {clean_text(r.get("name")): r for r in existing_list if "name" in r}
+
+                    new_riders_to_add = []
+                    count_added = 0
+
+                    for _, row in df_rf.iterrows():
+                        raw_name = str(row[name_col_r]).strip() if pd.notna(row[name_col_r]) else ""
+                        if not raw_name:
+                            continue
+                        
+                        raw_code = str(row[code_col_r]).strip() if pd.notna(row[code_col_r]) else ""
+                        raw_phone = str(row[phone_col_r]).strip() if phone_col_r and pd.notna(row[phone_col_r]) else ""
+
+                        clean_n = clean_text(raw_name)
+                        if clean_n not in existing_names:
+                            new_riders_to_add.append({
+                                "code": raw_code,
+                                "name": raw_name,
+                                "phone": raw_phone
+                            })
+                            count_added += 1
+
+                    if new_riders_to_add:
+                        supabase.table("riders").insert(new_riders_to_add).execute()
+                        st.toast(f"✅ تم إضافة {count_added} مندوب جديد!", icon="🚀")
+                        st.success(f"✅ تم استيراد إضافة {count_added} مندوب بنجاح!")
+                        st.rerun()
+                    else:
+                        st.info("💡 جميع المناديب بالشيت مسجلين مسبقاً بقاعدة البيانات.")
+                except Exception as e:
+                    st.error(f"خطأ أثناء رفع الملف: {e}")
+
+    st.divider()
+
+    col_edit1, col_edit2 = st.columns(2)
+
+    with col_edit1:
+        st.markdown("<div class='section-title'>📱 إضافة / تعديل رقم الموبايل والكود</div>", unsafe_allow_html=True)
+        riders_list_edit = get_riders()
+        if riders_list_edit:
+            r_edit_options = {f"{r.get('code', '')} - {r.get('name', '')}": r for r in riders_list_edit if "name" in r}
+            if r_edit_options:
+                selected_r_edit = st.selectbox("اختر المندوب لتحديث بياناته:", list(r_edit_options.keys()), key="select_edit_rider")
+                
+                selected_rider_obj = r_edit_options[selected_r_edit]
+                
+                new_c = st.text_input("كود المندوب:", value=str(selected_rider_obj.get("code", "")), key="edit_rider_code")
+                new_p = st.text_input("رقم الموبايل:", value=str(selected_rider_obj.get("phone", "")), key="edit_rider_phone")
+
+                if st.button("💾 حفظ التعديل للمندوب", type="primary", key="btn_save_edit_rider"):
+                    try:
+                        supabase.table("riders").update({
+                            "code": new_c.strip(),
+                            "phone": new_p.strip()
+                        }).eq("id", selected_rider_obj.get("id")).execute()
+
+                        st.toast("✅ تم تحديث بيانات المندوب!", icon="📲")
+                        st.success("تم تحديث البيانات بنجاح!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"خطأ في الحفظ: {e}")
+
+    with col_edit2:
         st.markdown("<div class='section-title'>🗑️ حذف مندوب وأرشفته</div>", unsafe_allow_html=True)
         riders_list = get_riders()
         if riders_list:
-            r_options = {f"{r.get('code', '')} - {r['name']}": r for r in riders_list}
-            selected_r_del = st.selectbox("اختر المندوب المراد حسفه:", list(r_options.keys()))
-            
-            if st.button("❌ نقل المندوب للأرشيف وحذفه", type="secondary"):
-                r_item = r_options[selected_r_del]
-                try:
-                    supabase.table("deleted_riders").insert({
-                        "original_id": r_item.get("id"),
-                        "code": r_item.get("code", ""),
-                        "name": r_item.get("name", ""),
-                        "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    }).execute()
-
-                    supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
-                    st.toast("✅ تم حذف المندوب وأرشفته بنجاح!", icon="🗑️")
-                    st.success(f"تم حذف المندوب ({r_item.get('name')}) ونقله للأرشيف.")
-                    st.rerun()
-                except Exception as e:
+            r_options = {f"{r.get('code', '')} - {r.get('name', '')}": r for r in riders_list if "name" in r}
+            if r_options:
+                selected_r_del = st.selectbox("اختر المندوب المراد حذفه:", list(r_options.keys()), key="del_rider_select")
+                
+                if st.button("❌ نقل المندوب للأرشيف وحذفه", type="secondary", key="btn_del_rider"):
+                    r_item = r_options[selected_r_del]
                     try:
+                        supabase.table("deleted_riders").insert({
+                            "original_id": r_item.get("id"),
+                            "code": r_item.get("code", ""),
+                            "name": r_item.get("name", ""),
+                            "phone": r_item.get("phone", ""),
+                            "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
+                        }).execute()
+
                         supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
-                        st.success(f"تم حذف المندوب ({r_item.get('name')}) بنجاح.")
+                        st.toast("✅ تم حذف المندوب وأرشفته بنجاح!", icon="🗑️")
+                        st.success(f"تم حذف المندوب ({r_item.get('name')}) ونقله للأرشيف.")
                         st.rerun()
-                    except Exception as ex:
-                        st.error(f"خطأ أثناء حذف المندوب: {ex}")
+                    except Exception as e:
+                        try:
+                            supabase.table("riders").delete().eq("id", r_item.get("id")).execute()
+                            st.success(f"تم حذف المندوب ({r_item.get('name')}) بنجاح.")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"خطأ أثناء حذف المندوب: {ex}")
         else:
             st.info("لا يوجد مناديب مسجلين للحذف.")
 
     st.divider()
-    st.subheader("📋 قائمة أسماء المناديب المعتمدة")
+    st.subheader("📋 قاعدة بيانات أسماء المناديب المعتمدة")
     riders_list = get_riders()
     if riders_list:
         df_r_show = pd.DataFrame(riders_list)
-        if "code" in df_r_show.columns and "name" in df_r_show.columns:
-            df_r_show = df_r_show[["code", "name"]]
-            df_r_show.columns = ["كود المندوب", "اسم المندوب"]
-            st.dataframe(df_r_show, use_container_width=True, hide_index=True)
+        
+        cols_to_show = []
+        if "code" in df_r_show.columns: cols_to_show.append("code")
+        if "name" in df_r_show.columns: cols_to_show.append("name")
+        if "phone" in df_r_show.columns: cols_to_show.append("phone")
+        
+        df_r_show = df_r_show[cols_to_show].fillna("")
+        df_r_show.rename(columns={
+            "code": "كود المندوب",
+            "name": "اسم المندوب",
+            "phone": "رقم الموبايل"
+        }, inplace=True)
 
-            csv_r = df_r_show.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 تحميل قائمة المناديب (Excel / CSV)",
-                data=csv_r,
-                file_name="riders_list.csv",
-                mime="text/csv"
-            )
+        st.dataframe(df_r_show, use_container_width=True, hide_index=True)
+
+        csv_r = df_r_show.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 تحميل كامل قاعدة بيانات المناديب (CSV)",
+            data=csv_r,
+            file_name="riders_database.csv",
+            mime="text/csv",
+            key="btn_download_riders_csv"
+        )
     else:
         st.info("لا يوجد مناديب مسجلين حالياً.")
 
 # ==========================================
-# الشاشة الرابعة: بيانات الموظفين والمناديب
-# ==========================================
-elif menu == "📝 بيانات الموظفين والمناديب":
-    st.markdown(
-        """
-    <div class="main-header">
-        <h1>📝 إدارة بيانات الموظفين والمناديب الشاملة</h1>
-        <p>إدخال، تعديل، رفع شيت البيانات، أو حذف سجلات الموظفين من السحابة</p>
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    tab1, tab2, tab3, tab4 = st.tabs(["✍️ إدخال يدوي فردي", "✏️ تعديل بيانات موظف", "📂 رفع شيت Excel/CSV", "🗑️ حذف موظف"])
-
-    with tab1:
-        st.markdown("<div class='section-title'>➕ تسجيل موظف جديد / إضافة بيانات</div>", unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            e_user_code = st.text_input("🆔 كود المندوب / المستخدم (user_code):", key="add_code")
-            e_name_ar = st.text_input("👤 الاسم بالعربي (name_ar):", key="add_name_ar")
-            e_name_en = st.text_input("🔤 الاسم بالإنجليزية (name_en):", key="add_name_en")
-            e_national_id = st.text_input("🪪 رقم البطاقة / الرقم القومي (national_id):", key="add_nat_id")
-
-        with c2:
-            e_branch = st.text_input("🏢 الفرع (branch_name):", key="add_branch")
-            e_work_mobile = st.text_input("📱 موبايل العمل (work_mobile):", key="add_work_mob")
-            e_personal_mobile = st.text_input("📞 الموبايل الشخصي (personal_mobile):", key="add_pers_mob")
-            e_emergency_1 = st.text_input("🚨 طوارئ 1 (emergency_mobile_1):", key="add_em1")
-
-        with c3:
-            e_emergency_2 = st.text_input("🚨 طوارئ 2 (emergency_mobile_2):", key="add_em2")
-            e_transfer_num = st.text_input("💳 رقم التحويل (transfer_number):", key="add_trans_num")
-            e_transfer_type = st.selectbox("🔄 نوع التحويل (transfer_type):", ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"], key="add_trans_type")
-            e_notes = st.text_area("📝 ملاحظات (notes):", height=108, key="add_notes")
-
-        if st.button("💾 حفظ البيانات الفردية في السحابة", type="primary"):
-            if not e_user_code or not e_name_ar:
-                st.error("❌ يرجى إدخال كود المندوب والاسم بالعربي على الأقل.")
-            else:
-                emp_record = {
-                    "user_code": e_user_code.strip(),
-                    "name_ar": e_name_ar.strip(),
-                    "name_en": e_name_en.strip(),
-                    "national_id": e_national_id.strip(),
-                    "work_mobile": e_work_mobile.strip(),
-                    "personal_mobile": e_personal_mobile.strip(),
-                    "emergency_mobile_1": e_emergency_1.strip(),
-                    "emergency_mobile_2": e_emergency_2.strip(),
-                    "transfer_number": e_transfer_num.strip(),
-                    "transfer_type": e_transfer_type,
-                    "branch_name": e_branch.strip(),
-                    "notes": e_notes.strip()
-                }
-                success, msg = save_employee_data(emp_record)
-                if success:
-                    st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
-                    st.success("✅ تم حفظ بيانات الموظف بنجاح!")
-                    if msg:
-                        st.warning(f"⚠️ تنبيه: {msg}")
-                    st.rerun()
-                else:
-                    st.error(f"❌ حدث خطأ أثناء الحفظ: {msg}")
-
-    with tab2:
-        st.markdown("<div class='section-title'>✏️ تعديل بيانات موظف مسجل</div>", unsafe_allow_html=True)
-        emp_list_for_edit = get_employees_data()
-        
-        if emp_list_for_edit:
-            emp_map_edit = {
-                f"الكود: {e.get('user_code', '')} | الاسم: {e.get('name_ar', '')}": e
-                for e in emp_list_for_edit
-            }
-            selected_emp_label = st.selectbox("اختر الموظف المراد تعديل بياناته:", list(emp_map_edit.keys()), key="select_emp_edit")
-            target_emp = emp_map_edit[selected_emp_label]
-            emp_id = target_emp.get("id")
-
-            # نموذج التعديل بالبيانات الحالية
-            ce1, ce2, ce3 = st.columns(3)
-            with ce1:
-                edit_user_code = st.text_input("🆔 كود المندوب:", value=str(target_emp.get("user_code", "") or ""), key="ed_code")
-                edit_name_ar = st.text_input("👤 الاسم بالعربي:", value=str(target_emp.get("name_ar", "") or ""), key="ed_name_ar")
-                edit_name_en = st.text_input("🔤 الاسم بالإنجليزية:", value=str(target_emp.get("name_en", "") or ""), key="ed_name_en")
-                edit_national_id = st.text_input("🪪 رقم البطاقة:", value=str(target_emp.get("national_id", "") or ""), key="ed_nat_id")
-
-            with ce2:
-                edit_branch = st.text_input("🏢 الفرع:", value=str(target_emp.get("branch_name", "") or ""), key="ed_branch")
-                edit_work_mobile = st.text_input("📱 موبايل العمل:", value=str(target_emp.get("work_mobile", "") or ""), key="ed_work_mob")
-                edit_personal_mobile = st.text_input("📞 الموبايل الشخصي:", value=str(target_emp.get("personal_mobile", "") or ""), key="ed_pers_mob")
-                edit_emergency_1 = st.text_input("🚨 طوارئ 1:", value=str(target_emp.get("emergency_mobile_1", "") or ""), key="ed_em1")
-
-            with ce3:
-                edit_emergency_2 = st.text_input("🚨 طوارئ 2:", value=str(target_emp.get("emergency_mobile_2", "") or ""), key="ed_em2")
-                edit_transfer_num = st.text_input("💳 رقم التحويل:", value=str(target_emp.get("transfer_number", "") or ""), key="ed_trans_num")
-                
-                transfer_types = ["محفظة (فودافون/غيرها)", "أنستا باي", "حساب بنكي", "أخرى"]
-                curr_tt = target_emp.get("transfer_type", "")
-                tt_index = transfer_types.index(curr_tt) if curr_tt in transfer_types else 0
-                
-                edit_transfer_type = st.selectbox("🔄 نوع التحويل:", transfer_types, index=tt_index, key="ed_trans_type")
-                edit_notes = st.text_area("📝 ملاحظات:", value=str(target_emp.get("notes", "") or ""), height=108, key="ed_notes")
-
-            if st.button("🔄 حفظ التعديلات في السحابة", type="primary"):
-                if not edit_user_code or not edit_name_ar:
-                    st.error("❌ لا يمكن ترك كود المندوب أو الاسم بالعربي فارغاً.")
-                else:
-                    updated_record = {
-                        "user_code": edit_user_code.strip(),
-                        "name_ar": edit_name_ar.strip(),
-                        "name_en": edit_name_en.strip(),
-                        "national_id": edit_national_id.strip(),
-                        "work_mobile": edit_work_mobile.strip(),
-                        "personal_mobile": edit_personal_mobile.strip(),
-                        "emergency_mobile_1": edit_emergency_1.strip(),
-                        "emergency_mobile_2": edit_emergency_2.strip(),
-                        "transfer_number": edit_transfer_num.strip(),
-                        "transfer_type": edit_transfer_type,
-                        "branch_name": edit_branch.strip(),
-                        "notes": edit_notes.strip()
-                    }
-                    success, msg = update_employee_data(emp_id, updated_record)
-                    if success:
-                        st.toast("✅ تم تحديث البيانات بنجاح!", icon="🎉")
-                        st.success("✅ تم تحديث بيانات الموظف في السحابة بنجاح!")
-                        if msg:
-                            st.warning(f"⚠️ تنبيه: {msg}")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ حدث خطأ أثناء التحديث: {msg}")
-        else:
-            st.info("لا توجد بيانات موظفين مسجلة حالياً للتعديل.")
-
-    with tab3:
-        st.markdown("<div class='section-title'>📂 رفع واستيراد شيت كامل لبيانات الموظفين</div>", unsafe_allow_html=True)
-        emp_file = st.file_uploader("ارفع شيت البيانات (Excel أو CSV)", type=["xlsx", "xls", "csv"], key="emp_uploader")
-
-        if emp_file:
-            try:
-                df_e = pd.read_csv(emp_file) if emp_file.name.endswith(".csv") else pd.read_excel(emp_file)
-                df_e.columns = [str(col).strip() for col in df_e.columns]
-                cols_e = ["-- غير محدد --"] + list(df_e.columns)
-
-                st.write("🔍 **ربط أعمدة الشيت مع حقول النظام:**")
-                m1, m2, m3 = st.columns(3)
-                
-                with m1:
-                    uc_col = st.selectbox("كود المندوب/المستخدم *", cols_e, index=1 if len(cols_e)>1 else 0)
-                    ar_col = st.selectbox("الاسم بالعربي *", cols_e, index=2 if len(cols_e)>2 else 0)
-                    en_col = st.selectbox("الاسم بالإنجليزية", cols_e)
-                    nat_col = st.selectbox("رقم البطاقة/القومي", cols_e)
-
-                with m2:
-                    br_col = st.selectbox("الفرع", cols_e)
-                    wm_col = st.selectbox("موبايل العمل", cols_e)
-                    pm_col = st.selectbox("الموبايل الشخصي", cols_e)
-                    em1_col = st.selectbox("طوارئ 1", cols_e)
-
-                with m3:
-                    em2_col = st.selectbox("طوارئ 2", cols_e)
-                    tn_col = st.selectbox("رقم التحويل", cols_e)
-                    tt_col = st.selectbox("نوع التحويل", cols_e)
-                    nt_col = st.selectbox("ملاحظات", cols_e)
-
-                if st.button("🚀 رفع الشيت بالكامل إلى السحابة", type="primary"):
-                    if uc_col == "-- غير محدد --" or ar_col == "-- غير محدد --":
-                        st.error("❌ يجب تحديد كود المندوب والاسم بالعربي على الأقل.")
-                    else:
-                        batch_records = []
-                        for _, row in df_e.iterrows():
-                            record = {
-                                "user_code": str(row[uc_col]).strip() if uc_col != "-- غير محدد --" and pd.notna(row[uc_col]) else "",
-                                "name_ar": str(row[ar_col]).strip() if ar_col != "-- غير محدد --" and pd.notna(row[ar_col]) else "",
-                                "name_en": str(row[en_col]).strip() if en_col != "-- غير محدد --" and pd.notna(row[en_col]) else "",
-                                "national_id": str(row[nat_col]).strip() if nat_col != "-- غير محدد --" and pd.notna(row[nat_col]) else "",
-                                "work_mobile": str(row[wm_col]).strip() if wm_col != "-- غير محدد --" and pd.notna(row[wm_col]) else "",
-                                "personal_mobile": str(row[pm_col]).strip() if pm_col != "-- غير محدد --" and pd.notna(row[pm_col]) else "",
-                                "emergency_mobile_1": str(row[em1_col]).strip() if em1_col != "-- غير محدد --" and pd.notna(row[em1_col]) else "",
-                                "emergency_mobile_2": str(row[em2_col]).strip() if em2_col != "-- غير محدد --" and pd.notna(row[em2_col]) else "",
-                                "transfer_number": str(row[tn_col]).strip() if tn_col != "-- غير محدد --" and pd.notna(row[tn_col]) else "",
-                                "transfer_type": str(row[tt_col]).strip() if tt_col != "-- غير محدد --" and pd.notna(row[tt_col]) else "",
-                                "branch_name": str(row[br_col]).strip() if br_col != "-- غير محدد --" and pd.notna(row[br_col]) else "",
-                                "notes": str(row[nt_col]).strip() if nt_col != "-- غير محدد --" and pd.notna(row[nt_col]) else "",
-                            }
-                            if record["user_code"] and record["name_ar"]:
-                                batch_records.append(record)
-
-                        if batch_records:
-                            success, msg = save_employees_batch(batch_records)
-                            if success:
-                                st.toast(f"✅ تم رفع {len(batch_records)} سجل بنجاح!", icon="🎉")
-                                st.success(f"✅ تم رفع وحفظ {len(batch_records)} سجل موظف بنجاح!")
-                                if msg:
-                                    st.warning(f"⚠️ تنبيه: {msg}")
-                                st.rerun()
-                            else:
-                                st.error(f"❌ حدث خطأ أثناء إضافة البيانات: {msg}")
-            except Exception as ex:
-                st.error(f"حدث خطأ أثناء قراءة الملف: {ex}")
-
-    with tab4:
-        st.markdown("<div class='section-title'>🗑️ حذف بيانات موظف مسجل</div>", unsafe_allow_html=True)
-        emp_list_for_del = get_employees_data()
-        if emp_list_for_del:
-            emp_map = {
-                f"الكود: {e.get('user_code', '')} | الاسم: {e.get('name_ar', '')}": e.get("id")
-                for e in emp_list_for_del
-            }
-            selected_emp = st.selectbox("اختر الموظف المراد حسفه نهائياً من السحابة:", list(emp_map.keys()))
-            if st.button("❌ حذف الموظف المحدد", type="secondary"):
-                emp_id_to_del = emp_map[selected_emp]
-                if delete_employee_by_id(emp_id_to_del):
-                    st.toast("✅ تم حذف بيانات الموظف بنجاح!", icon="🗑️")
-                    st.success("✅ تم حذف بيانات الموظف بنجاح!")
-                    st.rerun()
-                else:
-                    st.error("❌ حدث خطأ أثناء محاولة حذف الموظف.")
-        else:
-            st.info("لا يوجد موظفون مسجلون حالياً للحذف.")
-
-    st.divider()
-    st.markdown("<div class='section-title'>📋 قائمة بيانات الموظفين المسجلة بالسحابة (مع إكانية التعديل السريع)</div>", unsafe_allow_html=True)
-    
-    emp_list = get_employees_data()
-    if emp_list:
-        df_emp = pd.DataFrame(emp_list)
-        col_map = {
-            "id": "المعرف",
-            "user_code": "الكود/المستخدم",
-            "name_ar": "الاسم بالعربي",
-            "name_en": "الاسم بالإنجليزية",
-            "national_id": "رقم البطاقة",
-            "work_mobile": "موبايل العمل",
-            "personal_mobile": "الموبايل الشخصي",
-            "emergency_mobile_1": "طوارئ 1",
-            "emergency_mobile_2": "طوارئ 2",
-            "transfer_number": "رقم التحويل",
-            "transfer_type": "نوع التحويل",
-            "branch_name": "اسم الفرع",
-            "notes": "ملاحظات",
-            "created_at": "تاريخ التسجيل"
-        }
-        df_emp_show = df_emp.rename(columns=col_map)
-        
-        # استخدام st.data_editor لإتاحة التعديل التفاعلي المباشر
-        edited_df = st.data_editor(df_emp_show, use_container_width=True, hide_index=True, disabled=["المعرف", "تاريخ التسجيل"], key="emp_editor")
-        
-        if st.button("💾 حفظ التعديلات المباشرة من الجدول", type="primary"):
-            updated_count = 0
-            for idx, row in edited_df.iterrows():
-                e_id = row["المعرف"]
-                upd_data = {
-                    "user_code": str(row["الكود/المستخدم"]).strip() if pd.notna(row["الكود/المستخدم"]) else "",
-                    "name_ar": str(row["الاسم بالعربي"]).strip() if pd.notna(row["الاسم بالعربي"]) else "",
-                    "name_en": str(row["الاسم بالإنجليزية"]).strip() if pd.notna(row["الاسم بالإنجليزية"]) else "",
-                    "national_id": str(row["رقم البطاقة"]).strip() if pd.notna(row["رقم البطاقة"]) else "",
-                    "work_mobile": str(row["موبايل العمل"]).strip() if pd.notna(row["موبايل العمل"]) else "",
-                    "personal_mobile": str(row["الموبايل الشخصي"]).strip() if pd.notna(row["الموبايل الشخصي"]) else "",
-                    "emergency_mobile_1": str(row["طوارئ 1"]).strip() if pd.notna(row["طوارئ 1"]) else "",
-                    "emergency_mobile_2": str(row["طوارئ 2"]).strip() if pd.notna(row["طوارئ 2"]) else "",
-                    "transfer_number": str(row["رقم التحويل"]).strip() if pd.notna(row["رقم التحويل"]) else "",
-                    "transfer_type": str(row["نوع التحويل"]).strip() if pd.notna(row["نوع التحويل"]) else "",
-                    "branch_name": str(row["اسم الفرع"]).strip() if pd.notna(row["اسم الفرع"]) else "",
-                    "notes": str(row["ملاحظات"]).strip() if pd.notna(row["ملاحظات"]) else "",
-                }
-                success, _ = update_employee_data(e_id, upd_data)
-                if success:
-                    updated_count += 1
-            st.toast("✅ تم تحديث الجدول بالكامل!", icon="🎉")
-            st.success("✅ تم حفظ كافة التعديلات في قاعدة البيانات السحابية بنجاح!")
-            st.rerun()
-    else:
-        st.info("لا توجد بيانات موظفين مسجلة في جدول employees_data حتى الآن.")
-
-# ==========================================
-# الشاشة الخامسة: سجل التوريدات والأرشيف
+# الشاشة الرابعة: سجل التوريدات والأرشيف
 # ==========================================
 elif menu == "📜 سجل التوريدات الشهرية":
     st.markdown(
@@ -1062,71 +852,48 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     payments_list = get_payments()
 
-    col_del1, col_del2 = st.columns([2, 1])
+    # --- قسم حذف توريد محدد ---
+    st.subheader("🗑️ حذف توريد محدد ونقله للأرشيف")
+    if payments_list:
+        pay_options = {
+            f"ID: {p.get('id')} - {p.get('rider_name', '')} - {int(p.get('amount', 0)):,} ج.م ({p.get('date', '')})": p
+            for p in payments_list if "id" in p
+        }
+        if pay_options:
+            col_sel, col_btn = st.columns([3, 1])
+            with col_sel:
+                selected_pay_str = st.selectbox(
+                    "اختر التوريد المراد حسابه:", list(pay_options.keys()), key="select_pay_to_del"
+                )
+            with col_btn:
+                st.write("")
+                st.write("")
+                if st.button("❌ نقل إلى أرشيف المحذوفات", type="secondary", key="btn_move_to_archive"):
+                    selected_item = pay_options[selected_pay_str]
+                    pay_id = selected_item["id"]
+                    try:
+                        supabase.table("deleted_payments").insert({
+                            "original_id": pay_id,
+                            "rider_code": selected_item.get("rider_code", ""),
+                            "rider_name": selected_item.get("rider_name", ""),
+                            "amount": selected_item.get("amount", 0.0),
+                            "date": str(selected_item.get("date", "")),
+                            "notes": selected_item.get("notes", ""),
+                            "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")),
+                        }).execute()
 
-    with col_del1:
-        st.subheader("🗑️ حذف توريد محدد ونقله للأرشيف")
-        if payments_list:
-            pay_options = {
-                f"ID: {p['id']} - {p['rider_name']} - {int(p['amount']):,} ج.م ({p['date']})": p
-                for p in payments_list
-            }
-            selected_pay_str = st.selectbox(
-                "اختر التوريد المراد حسابه:", list(pay_options.keys())
-            )
-            if st.button("❌ نقل إلى أرشيف المحذوفات", type="secondary"):
-                selected_item = pay_options[selected_pay_str]
-                pay_id = selected_item["id"]
-                try:
-                    supabase.table("deleted_payments").insert({
-                        "original_id": pay_id,
-                        "rider_code": selected_item.get("rider_code", ""),
-                        "rider_name": selected_item.get("rider_name", ""),
-                        "amount": selected_item.get("amount", 0.0),
-                        "date": str(selected_item.get("date", "")),
-                        "notes": selected_item.get("notes", ""),
-                        "deleted_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")),
-                    }).execute()
-
-                    supabase.table("payments").delete().eq("id", pay_id).execute()
-                    st.toast("🗑️ تم النقل للأرشيف", icon="✅")
-                    st.success("✅ تم نقل التوريد إلى الأرشيف بنجاح!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ تعذر نقل الحركة للأرشيف بسبب خطأ في جدول الأرشيف: {e}")
-        else:
-            st.info("لا توجد توريدات حالية للحذف.")
-
-    with col_del2:
-        st.subheader("⚠️ مسح شامل")
-        st.write("حذف كافة التوريدات ونقلها للأرشيف:")
-        if st.button("🔥 مسح كافة التوريدات", type="primary"):
-            if payments_list:
-                try:
-                    records_to_archive = []
-                    now_str = str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    for p in payments_list:
-                        records_to_archive.append({
-                            "original_id": p.get("id"),
-                            "rider_code": p.get("rider_code", ""),
-                            "rider_name": p.get("rider_name", ""),
-                            "amount": p.get("amount", 0.0),
-                            "date": str(p.get("date", "")),
-                            "notes": p.get("notes", ""),
-                            "deleted_at": now_str,
-                        })
-
-                    if records_to_archive:
-                        supabase.table("deleted_payments").insert(records_to_archive).execute()
-
-                    supabase.table("payments").delete().neq("id", 0).execute()
-                    st.success("✅ تم مسح ونقل كافة التوريدات للأرشيف بنجاح!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"خطأ أثناء المسح الشامل: {e}")
+                        supabase.table("payments").delete().eq("id", pay_id).execute()
+                        st.toast("🗑️ تم النقل للأرشيف", icon="✅")
+                        st.success("✅ تم نقل التوريد إلى الأرشيف بنجاح!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ تعذر نقل الحركة للأرشيف بسبب خطأ: {e}")
+    else:
+        st.info("لا توجد توريدات حالية للحذف.")
 
     st.divider()
 
+    # --- جدول التوريدات النشطة ---
     st.subheader("📋 التوريدات الحالية النشطة")
     if payments_list:
         df_p = pd.DataFrame(payments_list)
@@ -1150,63 +917,66 @@ elif menu == "📜 سجل التوريدات الشهرية":
 
     st.divider()
 
+    # --- أرشيف المحذوفات ---
     st.subheader("🗑️ أرشيف المحذوفات (الاسترجاع أو الحذف النهائي)")
     deleted_list = get_deleted_payments()
 
     if deleted_list:
         del_options = {
-            f"ID الأرشيف: {d.get('id')} | المندوب: {d.get('rider_name')} | المبلغ: {int(d.get('amount', 0)):,} ج.م | الحذف: {d.get('deleted_at', '')}": d
-            for d in deleted_list
+            f"ID الأرشيف: {d.get('id')} | المندوب: {d.get('rider_name', '')} | المبلغ: {int(d.get('amount', 0)):,} ج.م | الحذف: {d.get('deleted_at', '')}": d
+            for d in deleted_list if "id" in d
         }
 
-        selected_del_str = st.selectbox(
-            "اختر التوريد المحذوف للتحكم به:",
-            list(del_options.keys()),
-        )
+        if del_options:
+            selected_del_str = st.selectbox(
+                "اختر التوريد المحذوف للتحكم به:",
+                list(del_options.keys()),
+                key="select_archived_pay"
+            )
 
-        col_act1, col_act2, col_act3 = st.columns([2, 2, 1])
+            col_act1, col_act2, col_act3 = st.columns([2, 2, 1])
 
-        with col_act1:
-            if st.button("↩️ استرجاع التوريد المختار", type="primary"):
-                item_to_restore = del_options[selected_del_str]
-                del_id = item_to_restore.get("id")
-                try:
-                    supabase.table("payments").insert({
-                        "rider_code": item_to_restore.get("rider_code", ""),
-                        "rider_name": item_to_restore.get("rider_name", ""),
-                        "date": str(item_to_restore.get("date", "")),
-                        "amount": float(item_to_restore.get("amount", 0.0)),
-                        "notes": f"مسترجع من المحذوفات: {item_to_restore.get('notes', '')}",
-                    }).execute()
+            with col_act1:
+                if st.button("↩️ استرجاع التوريد المختار", type="primary", key="btn_restore_pay"):
+                    item_to_restore = del_options[selected_del_str]
+                    del_id = item_to_restore.get("id")
+                    try:
+                        supabase.table("payments").insert({
+                            "rider_code": item_to_restore.get("rider_code", ""),
+                            "rider_name": item_to_restore.get("rider_name", ""),
+                            "date": str(item_to_restore.get("date", "")),
+                            "amount": float(item_to_restore.get("amount", 0.0)),
+                            "notes": f"مسترجع من المحذوفات: {item_to_restore.get('notes', '')}",
+                        }).execute()
 
-                    supabase.table("deleted_payments").delete().eq("id", del_id).execute()
-                    st.toast("↩️ تم الاسترجاع بنجاح!", icon="🎉")
-                    st.success("✅ تم استرجاع التوريد وإعادته للتوريدات النشطة!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"خطأ أثناء استرجاع البيانات: {e}")
+                        supabase.table("deleted_payments").delete().eq("id", del_id).execute()
+                        st.toast("↩️ تم الاسترجاع بنجاح!", icon="🎉")
+                        st.success("✅ تم استرجاع التوريد وإعادته للتوريدات النشطة!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"خطأ أثناء استرجاع البيانات: {e}")
 
-        with col_act2:
-            if st.button("❌ حذف نهائي من الأرشيف", type="secondary"):
-                item_to_delete = del_options[selected_del_str]
-                del_id = item_to_delete.get("id")
-                try:
-                    supabase.table("deleted_payments").delete().eq("id", del_id).execute()
-                    st.toast("🗑️ تم الحذف النهائي", icon="🔥")
-                    st.success("✅ تم حذف الحركة نهائياً من أرشيف قاعدة البيانات!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"خطأ أثناء الحذف النهائي: {e}")
+            with col_act2:
+                if st.button("❌ حذف نهائي من الأرشيف", type="secondary", key="btn_perm_del_pay"):
+                    item_to_delete = del_options[selected_del_str]
+                    del_id = item_to_delete.get("id")
+                    try:
+                        supabase.table("deleted_payments").delete().eq("id", del_id).execute()
+                        st.toast("🗑️ تم الحذف النهائي", icon="🔥")
+                        st.success("✅ تم حذف الحركة نهائياً من أرشيف قاعدة البيانات!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"خطأ أثناء الحذف النهائي: {e}")
 
-        with col_act3:
-            if st.button("🔥 إفراغ الأرشيف"):
-                try:
-                    supabase.table("deleted_payments").delete().neq("id", 0).execute()
-                    st.toast("🔥 تم مسح الأرشيف بالكامل", icon="🧹")
-                    st.success("✅ تم إفراغ الأرشيف بالكامل بنجاح!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"خطأ أثناء تفريغ الأرشيف: {e}")
+            with col_act3:
+                if st.button("🔥 إفراغ الأرشيف", key="btn_empty_archive"):
+                    try:
+                        supabase.table("deleted_payments").delete().neq("id", 0).execute()
+                        st.toast("🔥 تم مسح الأرشيف بالكامل", icon="🧹")
+                        st.success("✅ تم إفراغ الأرشيف بالكامل بنجاح!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"خطأ أثناء تفريغ الأرشيف: {e}")
 
         st.write("")
         df_del = pd.DataFrame(deleted_list)
@@ -1237,8 +1007,57 @@ elif menu == "📜 سجل التوريدات الشهرية":
     else:
         st.info("سجل المحذوفات فارغ، لم يتم حذف أي حركات مؤخراً.")
 
+    # --- قسم مسح كافة التوريدات ---
+    st.divider()
+    with st.expander("⚠️ منطقة الخطر: مسح كافة التوريدات النشطة"):
+        st.warning("تحذير: سيقوم هذا الخيار بنقل جميع التوريدات النشطة إلى جدول الأرشيف.")
+        
+        if "confirm_delete_all" not in st.session_state:
+            st.session_state.confirm_delete_all = False
+
+        if not st.session_state.confirm_delete_all:
+            if st.button("🔥 مسح كافة التوريدات", type="primary", key="btn_clear_all_payments"):
+                st.session_state.confirm_delete_all = True
+                st.rerun()
+        else:
+            st.error("🚨 هل أنت متأكد تماماً من رغبتك في نقل كل التوريدات إلى الأرشيف؟")
+            col_conf1, col_conf2 = st.columns(2)
+            with col_conf1:
+                if st.button("✅ نعم، تأكيد المسح الشامل", type="primary", key="btn_confirm_clear_all"):
+                    if payments_list:
+                        try:
+                            records_to_archive = []
+                            now_str = str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            for p in payments_list:
+                                records_to_archive.append({
+                                    "original_id": p.get("id"),
+                                    "rider_code": p.get("rider_code", ""),
+                                    "rider_name": p.get("rider_name", ""),
+                                    "amount": p.get("amount", 0.0),
+                                    "date": str(p.get("date", "")),
+                                    "notes": p.get("notes", ""),
+                                    "deleted_at": now_str,
+                                })
+
+                            if records_to_archive:
+                                supabase.table("deleted_payments").insert(records_to_archive).execute()
+
+                            supabase.table("payments").delete().neq("id", 0).execute()
+                            st.session_state.confirm_delete_all = False
+                            st.success("✅ تم مسح ونقل كافة التوريدات للأرشيف بنجاح!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"خطأ أثناء المسح الشامل: {e}")
+                    else:
+                        st.info("لا توجد بيانات للمسح.")
+                        st.session_state.confirm_delete_all = False
+            with col_conf2:
+                if st.button("❌ إلغاء", key="btn_cancel_clear_all"):
+                    st.session_state.confirm_delete_all = False
+                    st.rerun()
+
 # ==========================================
-# الشاشة السادسة: تجميع مرتبات المناديب
+# الشاشة الخامسة: تجميع مرتبات المناديب
 # ==========================================
 elif menu == "💰 تجميع مرتبات المناديب":
     st.markdown(
@@ -1260,7 +1079,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
 
     with col_s2:
         st.write("🗑️ مسح شيت المرتبات المحفوظ:")
-        if st.button("🔥 مسح المرتبات المحفوظة"):
+        if st.button("🔥 مسح المرتبات المحفوظة", key="btn_clear_salaries"):
             if delete_salaries_data():
                 st.success("✅ تم مسح المرتبات المحفوظة!")
                 st.rerun()
@@ -1298,15 +1117,15 @@ elif menu == "💰 تجميع مرتبات المناديب":
             col_sel1, col_sel2, col_sel3, col_sel4 = st.columns(4)
 
             with col_sel1:
-                selected_code_col = st.selectbox("عمود كود المندوب:", cols, index=cols.index(code_c))
+                selected_code_col = st.selectbox("عمود كود المندوب:", cols, index=cols.index(code_c), key="sal_col_code")
             with col_sel2:
-                selected_name_col = st.selectbox("عمود اسم المندوب:", cols, index=cols.index(name_c))
+                selected_name_col = st.selectbox("عمود اسم المندوب:", cols, index=cols.index(name_c), key="sal_col_name")
             with col_sel3:
-                selected_sal_col = st.selectbox("عمود المرتب / المبلغ:", cols, index=cols.index(salary_c))
+                selected_sal_col = st.selectbox("عمود المرتب / المبلغ:", cols, index=cols.index(salary_c), key="sal_col_amount")
             with col_sel4:
                 date_options = ["بدون تحديد / شهر واحد"] + cols
                 default_date_idx = (cols.index(date_c) + 1) if date_c and date_c in cols else 0
-                selected_date_col = st.selectbox("عمود التاريخ / الشهر (للتقسيم):", date_options, index=default_date_idx)
+                selected_date_col = st.selectbox("عمود التاريخ / الشهر (للتقسيم):", date_options, index=default_date_idx, key="sal_col_date")
 
             df_sal["Salary_Clean"] = pd.to_numeric(
                 df_sal[selected_sal_col].astype(str).str.replace(",", "").str.strip(), errors="coerce"
@@ -1323,6 +1142,9 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 group_cols = ["Code_Clean", "Name_Clean"]
 
             grouped_data = df_sal.groupby(group_cols, as_index=False)["Salary_Clean"].sum()
+
+            for _, r_item in grouped_data.iterrows():
+                auto_register_rider(r_item["Code_Clean"], r_item["Name_Clean"])
 
             save_salaries_data(grouped_data)
             st.success("✅ تم معالجة وحفظ شيت المرتبات في السحابة بنجاح!")
@@ -1355,6 +1177,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
                 selected_month_filter = st.selectbox(
                     "📅 اختر الشهر لإظهاره منفصلاً:",
                     ["عرض كافة الأشهر"] + available_months,
+                    key="filter_sal_month"
                 )
 
             if selected_month_filter != "عرض كافة الأشهر":
@@ -1401,6 +1224,7 @@ elif menu == "💰 تجميع مرتبات المناديب":
             file_name="Salaries_Report.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
+            key="btn_download_sal_excel"
         )
     else:
         st.info("💡 لا يوجد شيت مرتبات محفوظ حالياً. قم برفع شيت مرتبات جديد للبدء.")
