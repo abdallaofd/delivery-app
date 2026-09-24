@@ -36,6 +36,11 @@ def clean_code(code_val):
     return c_str
 
 
+def is_valid_rider_name(name):
+    clean_name = clean_text(name)
+    return bool(clean_name) and any(character.isalpha() for character in clean_name)
+
+
 def get_riders():
     try:
         res = supabase.table("riders").select("*").execute()
@@ -60,8 +65,64 @@ def get_deleted_payments():
         return []
 
 
+def deduplicate_riders(riders):
+    riders_by_identity = {}
+    duplicate_ids = []
+
+    for rider in riders:
+        rider_name = clean_text(rider.get("name"))
+        if not rider_name:
+            continue
+
+        rider_code = clean_code(rider.get("code"))
+        identity = f"code:{rider_code}" if rider_code else f"name:{rider_name}"
+        existing = riders_by_identity.get(identity)
+        if not existing:
+            riders_by_identity[identity] = rider
+            continue
+
+        updates = {}
+        existing_code = clean_code(existing.get("code"))
+        duplicate_code = clean_code(rider.get("code"))
+        existing_phone = clean_code(existing.get("phone"))
+        duplicate_phone = clean_code(rider.get("phone"))
+
+        if not existing_code and duplicate_code:
+            updates["code"] = duplicate_code
+        if (not existing_phone or existing_phone == "0") and duplicate_phone and duplicate_phone != "0":
+            updates["phone"] = duplicate_phone
+
+        if updates:
+            try:
+                supabase.table("riders").update(updates).eq("id", existing.get("id")).execute()
+                existing.update(updates)
+            except Exception:
+                pass
+
+        if rider.get("id") is not None:
+            duplicate_ids.append(rider["id"])
+
+    for duplicate_id in duplicate_ids:
+        try:
+            supabase.table("riders").delete().eq("id", duplicate_id).execute()
+        except Exception:
+            pass
+
+    return list(riders_by_identity.values())
+
+
+def remove_invalid_riders(riders):
+    for rider in riders:
+        if rider.get("id") is None or is_valid_rider_name(rider.get("name")):
+            continue
+        try:
+            supabase.table("riders").delete().eq("id", rider["id"]).execute()
+        except Exception:
+            pass
+
+
 def auto_register_rider(code, name, phone=""):
-    if not name or str(name).strip() == "":
+    if not is_valid_rider_name(name):
         return
     
     clean_c = clean_code(code)
@@ -74,12 +135,11 @@ def auto_register_rider(code, name, phone=""):
     for r in existing_riders:
         r_c = clean_code(r.get("code"))
         r_n = clean_text(r.get("name"))
-        
-        # البحث بالأولوية للكود أولاً ثم الاسم
+
         if clean_c and r_c == clean_c:
             found_rider = r
             break
-        elif not clean_c and clean_n and r_n == clean_n:
+        if not clean_c and clean_n and not r_c and r_n == clean_n:
             found_rider = r
             break
 
@@ -723,6 +783,10 @@ elif menu == "➕ إضافة / تسجيل توريد يومي":
 # الشاشة الثالثة: إدارة أسماء المناديب
 # ==========================================
 elif menu == "👥 إدارة أسماء المناديب":
+    riders_to_clean = get_riders()
+    remove_invalid_riders(riders_to_clean)
+    deduplicate_riders(riders_to_clean)
+
     st.markdown(
         """
     <div class="main-header">
@@ -765,7 +829,7 @@ elif menu == "👥 إدارة أسماء المناديب":
                     count_added = 0
                     for _, row in df_rf.iterrows():
                         raw_name = str(row[name_col_r]).strip() if pd.notna(row[name_col_r]) else ""
-                        if not raw_name:
+                        if not is_valid_rider_name(raw_name):
                             continue
                         
                         raw_code = clean_code(row[code_col_r]) if pd.notna(row[code_col_r]) else ""
