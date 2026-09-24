@@ -53,7 +53,8 @@ def get_payments():
     try:
         res = supabase.table("payments").select("*").execute()
         return res.data if res.data else []
-    except Exception:
+    except Exception as error:
+        st.error(f"تعذر قراءة التوريدات من قاعدة البيانات: {error}")
         return []
 
 
